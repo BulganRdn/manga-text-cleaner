@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manga Cleaner Studio</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='19' font-size='19'>🧹</text></svg>">
+</head>
+<body>
+
+<header id="topbar">
+  <div id="logo">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5b8cff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 3h12l4 4v14H4z"/><path d="M9 8h6M9 12h6M9 16h3" stroke="#9aa3b2"/>
+    </svg>
+    <span data-i18n="app_title">Manga Cleaner Studio</span>
+  </div>
+  <span id="project-info"></span>
+  <div class="spacer"></div>
+
+  <div id="job-pill">
+    <div id="job-bar"><div></div></div>
+    <span id="job-text"></span>
+    <button id="job-cancel" data-i18n-title="cancel" title="Cancel">✕</button>
+  </div>
+
+  <button class="btn" id="btn-open">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5h6l2 2h10v12H3z"/></svg>
+    <span data-i18n="open_project">Projects</span>
+  </button>
+  <button class="btn" id="btn-detect-all" disabled>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6M11 8v6"/></svg>
+    <span data-i18n="detect_all">Detect masks</span>
+  </button>
+  <button class="btn primary" id="btn-process" disabled>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+    <span data-i18n="process_all">Process all</span>
+  </button>
+  <button class="btn" id="btn-export" disabled>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v4h16v-4"/></svg>
+    <span data-i18n="export">Export</span>
+  </button>
+
+  <select id="lang-select" class="ctrl" title="Language">
+    <option value="en">EN</option>
+    <option value="mn">MN</option>
+  </select>
+  <button class="icon-btn" id="btn-settings" data-i18n-title="settings" title="Settings">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h.01a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h.01a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v.01a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+  </button>
+</header>
+
+<div id="main">
+
+  <nav id="toolbar">
+    <button class="tool" data-tool="brush" data-i18n-title="tool_brush" title="Brush">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.06 11.9l8.07-8.06a2.85 2.85 0 114.03 4.03l-8.06 8.08"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 00-3-3.02z"/></svg>
+    </button>
+    <button class="tool" data-tool="eraser" data-i18n-title="tool_eraser" title="Eraser">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7L3 16a1.5 1.5 0 010-2L13 4a1.5 1.5 0 012 0l6 6a1.5 1.5 0 010 2l-8 8"/><path d="M9 8l7 7"/></svg>
+    </button>
+    <button class="tool" data-tool="rect" data-i18n-title="tool_rect" title="Rectangle">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"><rect x="4" y="5" width="16" height="14" rx="1"/></svg>
+    </button>
+    <button class="tool" data-tool="pan" data-i18n-title="tool_pan" title="Pan">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 00-4 0v5m0-3.5V4a2 2 0 00-4 0v7m0-5.5V6a2 2 0 00-4 0v8m12-3v-2a2 2 0 014 0v4c0 4-3 7-7 7h-2c-2.5 0-4.5-1.2-6-3.2L4 14.5c-.8-1-.5-2.5.7-3 .9-.4 1.9-.1 2.5.7L8 13"/></svg>
+    </button>
+    <div class="tb-sep"></div>
+    <button class="tool" data-tool="draw" data-i18n-title="tool_draw" title="Paint">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+    </button>
+    <button class="tool" data-tool="restore" data-i18n-title="tool_restore" title="Restore original">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9"/><path d="M3 3v6h6"/><path d="M12 7v5l3 3"/></svg>
+    </button>
+    <button class="tool" data-tool="heal" data-i18n-title="tool_heal" title="Spot heal">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 00-2 2v3m0 5v3a2 2 0 002 2h3m5-15h3a2 2 0 012 2v3m0 5v3a2 2 0 01-2 2h-3"/><path d="M12 8v8M8 12h8"/></svg>
+    </button>
+    <button class="tool" data-tool="text" data-i18n-title="tool_text" title="Text">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5h16v2M12 5v14m-3 0h6"/></svg>
+    </button>
+    <div class="tb-sep"></div>
+    <button class="tool action" id="btn-undo" data-i18n-title="undo" title="Undo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 110 12h-3"/></svg>
+    </button>
+    <button class="tool action" id="btn-redo" data-i18n-title="redo" title="Redo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 100 12h3"/></svg>
+    </button>
+    <div class="tb-sep"></div>
+    <button class="tool action" id="btn-detect" data-i18n-title="detect_page" title="Detect">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6M11 8v6"/></svg>
+    </button>
+    <button class="tool action" id="btn-clean" data-i18n-title="clean_page" title="Clean">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.7a2 2 0 001.3 1.3L21 12l-5.8 1.9a2 2 0 00-1.3 1.3L12 21l-1.9-5.8a2 2 0 00-1.3-1.3L3 12l5.8-2a2 2 0 001.3-1.3z"/></svg>
+    </button>
+    <button class="tool action" id="btn-mask-vis" data-i18n-title="toggle_mask" title="Mask">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>
+    <button class="tool action" id="btn-compare" data-i18n-title="compare" title="Compare">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v18M5 8l-3 4 3 4M19 8l3 4-3 4"/></svg>
+    </button>
+    <button class="tool action danger" id="btn-revert" data-i18n-title="revert_page" title="Revert">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+    </button>
+    <div class="tb-sep"></div>
+    <button class="tool action" id="btn-zoom-in" data-i18n-title="zoom_in" title="Zoom in">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6M11 8v6"/></svg>
+    </button>
+    <button class="tool action" id="btn-zoom-out" data-i18n-title="zoom_out" title="Zoom out">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6"/></svg>
+    </button>
+    <button class="tool action" id="btn-zoom-fit" data-i18n-title="zoom_fit" title="Fit">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+    </button>
+    <button class="tool action" id="btn-zoom-100" data-i18n-title="zoom_100" title="100%">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 8v8M5 10l2-2"/><circle cx="14" cy="10" r="2.2"/><circle cx="18" cy="15" r="2.2"/><path d="M20 7L12 18" stroke-width="1.6"/></svg>
+    </button>
+  </nav>
+
+  <div id="canvas-wrap">
+    <canvas id="editor-canvas"></canvas>
+    <div id="canvas-empty">
+      <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M4 3h12l4 4v14H4z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>
+      <div id="empty-text" data-i18n="no_page">Open a project and select a page.</div>
+    </div>
+    <div id="tool-options">
+      <label><span data-i18n="brush_size">Size</span>
+        <input type="range" id="brush-size" min="2" max="200" value="26">
+        <span class="range-val" id="brush-size-val">26</span>
+      </label>
+      <label><span data-i18n="mask_opacity">Mask opacity</span>
+        <input type="range" id="mask-opacity" min="10" max="90" value="45">
+      </label>
+      <label id="draw-color-wrap" style="display:none"><span data-i18n="draw_color">Color</span>
+        <input type="color" id="draw-color" value="#ffffff">
+        <span class="hint" data-i18n="eyedropper_hint">Alt+click = pick color</span>
+      </label>
+    </div>
+    <div class="compare-flag" id="compare-flag">ORIGINAL</div>
+
+    <div id="text-panel">
+      <div class="tp-head" data-i18n="text_panel">Text</div>
+      <textarea id="text-content" rows="3" data-i18n-placeholder="text_content_ph" placeholder="Translation…"></textarea>
+      <div class="tp-row">
+        <label><span data-i18n="text_size">Size</span>
+          <input type="number" id="text-size" min="6" max="200" value="26"></label>
+        <label><span data-i18n="text_font">Font</span>
+          <select id="text-font">
+            <option value="arial">Arial</option>
+            <option value="comic">Comic Sans</option>
+            <option value="verdana">Verdana</option>
+            <option value="tahoma">Tahoma</option>
+            <option value="impact">Impact</option>
+            <option value="times">Times</option>
+          </select></label>
+      </div>
+      <div class="tp-row">
+        <label><span data-i18n="text_color">Color</span>
+          <input type="color" id="text-color" value="#000000"></label>
+        <label><span data-i18n="text_stroke">Outline</span>
+          <input type="number" id="text-stroke" min="0" max="20" value="0"></label>
+        <label><span data-i18n="text_stroke_color">Outline color</span>
+          <input type="color" id="text-stroke-color" value="#ffffff"></label>
+      </div>
+      <div class="tp-row">
+        <label class="check"><input type="checkbox" id="text-bold" checked>
+          <span data-i18n="text_bold">Bold</span></label>
+        <button class="btn danger" id="text-delete" data-i18n="text_delete">Delete</button>
+      </div>
+      <div class="tp-hint" data-i18n="text_hint">Double-click the page to add text. Drag to move.</div>
+    </div>
+  </div>
+
+  <aside id="sidebar">
+    <div id="sidebar-head">
+      <span data-i18n="pages">pages</span>
+      <span id="page-count"></span>
+    </div>
+    <div id="page-list"></div>
+  </aside>
+</div>
+
+<footer id="statusbar">
+  <span id="sb-zoom">100%</span>
+  <span id="sb-page"></span>
+  <span id="sb-backend"></span>
+  <div class="spacer"></div>
+  <span id="sb-hint"></span>
+</footer>
+
+<div class="modal-backdrop" id="modal-open">
+  <div class="modal wide">
+    <h2 data-i18n="welcome_title">Manga Cleaner Studio</h2>
+    <p class="sub" data-i18n="welcome_sub"></p>
+
+    <div class="two-col">
+      <div>
+        <h3 data-i18n="recent_projects">Projects</h3>
+        <div id="project-list"></div>
+      </div>
+      <div>
+        <h3 data-i18n="new_project">New project</h3>
+        <div class="field">
+          <label data-i18n="project_name">Project name</label>
+          <input type="text" id="project-name" data-i18n-placeholder="project_name_ph" placeholder="e.g. solo-leveling-ch12">
+        </div>
+        <div class="field">
+          <label data-i18n="folder_label">Chapter folder path</label>
+          <div class="row">
+            <input type="text" id="folder-input" data-i18n-placeholder="folder_placeholder" placeholder="e.g. D:\manga\chapter-12">
+            <button class="btn native-browse" id="btn-browse-folder" style="flex:0 0 auto; display:none" data-i18n="browse_native">Browse…</button>
+          </div>
+        </div>
+        <button class="btn primary" id="btn-create-project" data-i18n="create_btn" style="width:100%">Create project</button>
+        <div id="dropzone">
+          <span data-i18n="or_drop">or drop image files here</span> ·
+          <span class="browse" id="browse-link" data-i18n="browse">Browse files</span>
+          <input type="file" id="file-input" multiple accept=".jpg,.jpeg,.png,.webp" hidden>
+        </div>
+      </div>
+    </div>
+    <div class="backend-note" id="lama-note" data-i18n="lama_missing"></div>
+    <div class="backend-note" id="craft-note" data-i18n="craft_missing"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-settings">
+  <div class="modal">
+    <h2 data-i18n="settings">Settings</h2>
+    <p class="sub"></p>
+    <div class="field">
+      <label data-i18n="set_detect">Remove</label>
+      <select id="set-detect">
+        <option value="both" data-i18n="detect_both">Balloons + SFX</option>
+        <option value="balloon" data-i18n="detect_balloon">Balloon text only</option>
+        <option value="sfx" data-i18n="detect_sfx">SFX only</option>
+      </select>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label data-i18n="set_detector">Text detector</label>
+        <select id="set-detector">
+          <option value="auto" data-i18n="det_auto">Auto</option>
+          <option value="craft">CRAFT</option>
+          <option value="opencv">OpenCV</option>
+        </select>
+      </div>
+      <div class="field">
+        <label data-i18n="set_model">Inpainting model</label>
+        <select id="set-model">
+          <option value="lama" data-i18n="model_lama">LaMa (best quality)</option>
+          <option value="opencv" data-i18n="model_opencv">OpenCV (fast)</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label><span data-i18n="set_dilate">Mask expansion</span> (px)</label>
+      <div class="range-field">
+        <input type="range" id="set-dilate" min="0" max="20" value="6">
+        <span class="range-val" id="set-dilate-val">6</span>
+      </div>
+    </div>
+    <div class="field">
+      <label><span data-i18n="set_feather">Edge feathering</span> (px)</label>
+      <div class="range-field">
+        <input type="range" id="set-feather" min="0" max="10" value="3">
+        <span class="range-val" id="set-feather-val">3</span>
+      </div>
+    </div>
+    <label class="check">
+      <input type="checkbox" id="set-force">
+      <span data-i18n="set_force">Re-process edited pages too</span>
+    </label>
+    <div class="modal-actions">
+      <button class="btn primary" data-close="#modal-settings">OK</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-export">
+  <div class="modal">
+    <h2 data-i18n="export_title">Export chapter</h2>
+    <p class="sub" data-i18n="export_hint"></p>
+    <div class="field">
+      <label data-i18n="out_dir">Output folder</label>
+      <div class="row">
+        <input type="text" id="out-input">
+        <button class="btn native-browse" id="btn-browse-out" style="flex:0 0 auto; display:none" data-i18n="browse_native">Browse…</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <a class="btn" id="zip-link" href="/api/export/zip" style="display:none" download>
+        <span data-i18n="download_zip">Download ZIP</span>
+      </a>
+      <button class="btn primary" id="btn-do-export" data-i18n="export_btn">Export pages</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script src="i18n.js"></script>
+<script src="editor.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

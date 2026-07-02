@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "manga-text-cleaner"
+version = "1.0.0"
+description = "Automatic text removal and inpainting for manga/manhwa pages, with a full manual touch-up studio"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Manga Cleaner Studio contributors" }]
+keywords = ["manga", "manhwa", "inpainting", "text-removal", "scanlation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Multimedia :: Graphics :: Editors",
+    "Programming Language :: Python :: 3",
+]
+
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+    "Pillow>=10.0",
+    "tqdm>=4.65",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+lama = ["torch>=2.0", "simple-lama-inpainting>=0.1.2"]
+craft = ["craft-text-detector>=0.4.3"]
+desktop = ["pywebview>=5.0"]
+
+[project.scripts]
+manga-cleaner = "mangacleaner.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["mangacleaner*"]
+
+[tool.setuptools.package-data]
+"mangacleaner.server" = ["static/*"]

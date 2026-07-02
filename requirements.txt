@@ -1,0 +1,21 @@
+# --- Core (required) ---
+numpy>=1.24
+opencv-python>=4.8
+Pillow>=10.0
+tqdm>=4.65
+
+# --- Studio web UI ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+
+# --- Optional: desktop app (native window + folder pickers) ---
+# pywebview>=5.0
+
+# --- Optional: LaMa inpainting (best quality; auto-uses GPU when present) ---
+# pip install torch --index-url https://download.pytorch.org/whl/cu121   # GPU build
+# simple-lama-inpainting>=0.1.2
+# or: iopaint>=1.2
+
+# --- Optional: deep-learning text detection ---
+# craft-text-detector>=0.4.3
