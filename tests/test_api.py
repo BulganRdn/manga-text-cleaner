@@ -162,6 +162,40 @@ def run_tests(chapter: Path) -> None:
     assert r.json()["status"] == "skipped"
     print("revert: OK")
 
+    ok, buf = cv2.imencode(".png", np.full((400, 300, 3), 255, np.uint8))
+    r = client.post("/api/project/pages/upload",
+                    files=[("files", ("page5.png", buf.tobytes(), "image/png"))])
+    assert r.status_code == 200, r.text
+    st = r.json()
+    names = [p["name"] for p in st["pages"]]
+    assert st["added"] == 1 and names == ["page1.png", "page2.png",
+                                          "page5.png", "page10.png"], st
+    r = client.post("/api/project/pages/upload",
+                    files=[("files", ("page5.png", buf.tobytes(), "image/png"))])
+    assert r.json()["added"] == 0, "duplicate name should be skipped"
+    print("add pages to open project: OK")
+
+    r = client.get(f"/api/projects/{PROJ}/cover")
+    assert r.status_code == 200 and len(r.content) > 500, r.status_code
+    print("project cover: OK")
+
+    from mangacleaner.core.typeset import render_texts
+    canvas = np.full((300, 300, 3), 255, np.uint8)
+    out = render_texts(canvas, [{"x": 150, "y": 150, "text": "IIIIIIII",
+                                 "size": 40, "rotation": 90,
+                                 "color": "#000000", "stroke": 0}])
+    ys, xs = np.where(cv2.cvtColor(out, cv2.COLOR_BGR2GRAY) < 100)
+    assert len(ys) and ys.ptp() > xs.ptp(), "rotated text should render vertically"
+    print("rotated typeset burn-in: OK")
+
+    r = client.delete(f"/api/projects/{PROJ}")
+    assert r.status_code == 200 and r.json()["ok"] is True, r.text
+    assert not (PROJECTS_ROOT / PROJ).exists()
+    assert client.get("/api/project").json()["pages"] == [], \
+        "open project should be closed after deletion"
+    assert client.delete(f"/api/projects/{PROJ}").status_code == 404
+    print("delete project (incl. currently open): OK")
+
     print("\nALL API TESTS PASSED")
 
 

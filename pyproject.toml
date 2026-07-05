@@ -30,7 +30,7 @@ dependencies = [
 
 [project.optional-dependencies]
 lama = ["torch>=2.0", "simple-lama-inpainting>=0.1.2"]
-craft = ["craft-text-detector>=0.4.3"]
+detect = ["onnxruntime>=1.16"]
 desktop = ["pywebview>=5.0"]
 
 [project.scripts]

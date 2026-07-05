@@ -53,12 +53,26 @@ def render_texts(img_bgr: np.ndarray, items: list[dict]) -> np.ndarray:
         font = _get_font(str(it.get("font", "arial")), size,
                          bool(it.get("bold", True)))
         stroke = max(0, int(it.get("stroke", 0)))
-        draw.multiline_text(
-            (float(it.get("x", 0)), float(it.get("y", 0))),
-            text, font=font,
-            fill=str(it.get("color", "#000000")),
-            stroke_width=stroke,
-            stroke_fill=str(it.get("strokeColor", "#ffffff")),
-            anchor="mm", align="center",
-            spacing=int(size * 0.25))
+        kwargs = dict(font=font,
+                      fill=str(it.get("color", "#000000")),
+                      stroke_width=stroke,
+                      stroke_fill=str(it.get("strokeColor", "#ffffff")),
+                      anchor="mm", align="center",
+                      spacing=int(size * 0.25))
+        x, y = float(it.get("x", 0)), float(it.get("y", 0))
+        rotation = float(it.get("rotation", 0) or 0)
+        if abs(rotation) < 0.05:
+            draw.multiline_text((x, y), text, **kwargs)
+            continue
+        bbox = draw.multiline_textbbox((0, 0), text, font=font,
+                                       stroke_width=stroke, anchor="mm",
+                                       align="center",
+                                       spacing=int(size * 0.25))
+        lw = int(bbox[2] - bbox[0]) + 2 * stroke + 8
+        lh = int(bbox[3] - bbox[1]) + 2 * stroke + 8
+        layer = Image.new("RGBA", (lw, lh), (0, 0, 0, 0))
+        ImageDraw.Draw(layer).multiline_text((lw / 2, lh / 2), text, **kwargs)
+        layer = layer.rotate(-rotation, expand=True, resample=Image.BICUBIC)
+        pil.paste(layer, (round(x - layer.width / 2),
+                          round(y - layer.height / 2)), layer)
     return cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)

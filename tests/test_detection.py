@@ -27,6 +27,60 @@ def run(img: np.ndarray, mode: str = "both") -> np.ndarray:
     return det.detect(bgr, gray, mode)
 
 
+def art_blob_page() -> tuple[np.ndarray, np.ndarray]:
+    """A page whose only content is a large light convex art region (think
+    skin/sky/clothing) with sparse dark details inside — no text at all."""
+    img = np.full((800, 600), 200, np.uint8)
+    cv2.circle(img, (300, 300), 180, 255, -1)
+    for cx, cy in ((240, 260), (360, 260), (250, 340), (300, 350), (350, 340)):
+        cv2.circle(img, (cx, cy), 6, 60, -1)
+    blob = np.zeros_like(img)
+    cv2.circle(blob, (300, 300), 180, 255, -1)
+    return img, blob
+
+
+def ctd_tests() -> None:
+    from mangacleaner.core.ctd import find_weights
+
+    if find_weights() is None:
+        print("comic-text-detector: SKIPPED (weights not downloaded)")
+        return
+    from mangacleaner.core.detection import ComicTextDetector
+
+    try:
+        ctd = ComicTextDetector("cpu")
+    except Exception as e:
+        print(f"comic-text-detector: SKIPPED ({e})")
+        return
+
+    gray, blob = art_blob_page()
+    bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    heur_spill = (det.detect(bgr, gray, "both")[blob > 0] > 0).mean()
+    assert heur_spill > 0, "premise broken: heuristic no longer false-positives here"
+    ctd_spill = (ctd.detect(bgr, gray, "both")[blob > 0] > 0).mean()
+    assert ctd_spill < 0.01, f"ctd flagged the art blob ({ctd_spill:.1%})"
+    print(f"ctd excludes light art blob: OK "
+          f"(heuristic spill {heur_spill:.1%} -> ctd {ctd_spill:.1%})")
+
+    examples = Path(__file__).resolve().parents[1] / "examples"
+    img = cv2.imread(str(examples / "sample_1.jpg"))
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    mask = ctd.detect(img, gray, "both")
+    assert (mask[:200] > 0).any(), "ctd missed the dialogue text on the sample page"
+    face_spill = (mask[600:] > 0).mean()
+    assert face_spill < 0.005, f"ctd masked the character art ({face_spill:.1%})"
+    print(f"ctd sample page: OK (text found, art spill {face_spill:.2%})")
+
+    strip = np.vstack([cv2.imread(str(examples / f"sample_{i}.jpg"))
+                       for i in (1, 2, 3)])
+    gray = cv2.cvtColor(strip, cv2.COLOR_BGR2GRAY)
+    mask = ctd.detect(strip, gray, "both")
+    for band, name in (((0, 300), "page 1"), ((1900, 2100), "page 2"),
+                       ((2600, 2900), "page 3")):
+        assert (mask[band[0]:band[1]] > 0).any(), f"tall strip: missed text on {name}"
+    print("ctd tall strip: OK (text found on all three stacked pages)")
+
+
 def main() -> None:
     img = np.full((800, 600), 255, np.uint8)
     img[::7, ::7] = 120
@@ -96,6 +150,8 @@ def main() -> None:
     mask = run(img)
     assert mask.max() == 0, "false positives on a black page"
     print("blank pages produce empty masks: OK")
+
+    ctd_tests()
 
     print("\nALL DETECTION TESTS PASSED")
 

@@ -8,3 +8,5 @@ dist/
 .venv/
 venv/
 recovered_chapter*/
+projects/
+models/

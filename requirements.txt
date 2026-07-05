@@ -18,4 +18,7 @@ python-multipart>=0.0.9
 # or: iopaint>=1.2
 
 # --- Optional: deep-learning text detection ---
-# craft-text-detector>=0.4.3
+# comic-text-detector weights (~90 MB) auto-download on first use of
+# --detector comictextdetector.
+# onnxruntime>=1.16            # optional: slightly faster than the built-in
+#                              # OpenCV-DNN fallback

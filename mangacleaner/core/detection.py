@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 import cv2
 import numpy as np
@@ -139,57 +140,64 @@ class OpenCVTextDetector:
         return mask
 
 
-class CraftTextDetector:
-    name = "craft"
+class ComicTextDetector:
+    """Manga-trained detector (dmMaze/comic-text-detector onnx weights)."""
 
-    def __init__(self, device: str):
-        from craft_text_detector import Craft
-        self._craft = Craft(output_dir=None, crop_type="poly", cuda=(device == "cuda"))
+    name = "comictextdetector"
+
+    def __init__(self, device: str, auto_download: bool = False):
+        from .ctd import CTDModel, ensure_weights
+        kwargs = {}
+        for env, key in (("MANGACLEANER_CTD_CONF", "conf_thresh"),
+                         ("MANGACLEANER_CTD_MASK_THRESH", "mask_thresh"),
+                         ("MANGACLEANER_CTD_LINE_THRESH", "line_thresh")):
+            val = os.environ.get(env)
+            if val:
+                kwargs[key] = float(val)
+        self._model = CTDModel(ensure_weights(auto_download), device=device, **kwargs)
         self._fallback = OpenCVTextDetector()
 
     def detect(self, img_bgr: np.ndarray, gray: np.ndarray, mode: str) -> np.ndarray:
-        rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-        pred = self._craft.detect_text(rgb)
-        boxes = pred.get("boxes", [])
+        _boxes, mask = self._model.detect(img_bgr)
+        if mode == "both":
+            return mask
 
         balloon_union = np.zeros_like(gray)
-        for b in self._fallback.find_balloon_masks(gray):
+        for b in (self._fallback.find_balloon_masks(gray)
+                  + self._fallback.find_dark_balloon_masks(gray)):
             balloon_union |= b
 
-        mask = np.zeros_like(gray)
-        for box in boxes:
-            poly = np.asarray(box, dtype=np.int32).reshape(-1, 2)
-            cx = int(np.clip(poly[:, 0].mean(), 0, gray.shape[1] - 1))
-            cy = int(np.clip(poly[:, 1].mean(), 0, gray.shape[0] - 1))
+        n, labels, _stats, centroids = cv2.connectedComponentsWithStats(
+            (mask > 0).astype(np.uint8), 8)
+        out = np.zeros_like(mask)
+        for i in range(1, n):
+            cx = int(np.clip(centroids[i][0], 0, gray.shape[1] - 1))
+            cy = int(np.clip(centroids[i][1], 0, gray.shape[0] - 1))
             in_balloon = balloon_union[cy, cx] > 0
-            if mode == "balloon" and not in_balloon:
-                continue
-            if mode == "sfx" and in_balloon:
-                continue
-            cv2.fillPoly(mask, [poly], 255)
-        return mask
+            if (mode == "balloon" and in_balloon) or (mode == "sfx" and not in_balloon):
+                out[labels == i] = 255
+        return out
 
 
-def craft_available() -> bool:
-    try:
-        import craft_text_detector  # noqa: F401
-        return True
-    except ImportError:
-        return False
+def comictextdetector_available() -> bool:
+    from .ctd import find_weights
+    return find_weights() is not None
 
 
 def build_detector(kind: str, device: str):
-    if kind in ("auto", "craft"):
+    if kind in ("auto", "comictextdetector"):
+        explicit = kind == "comictextdetector"
         try:
-            det = CraftTextDetector(device)
-            log.info("Text detector: CRAFT (deep learning)")
+            det = ComicTextDetector(device, auto_download=explicit)
+            log.info("Text detector: comic-text-detector (manga-trained)")
             return det
-        except ImportError:
-            msg = "craft-text-detector is not installed"
+        except FileNotFoundError as e:
+            msg = str(e)
         except Exception as e:
-            msg = f"CRAFT failed to load ({e})"
-        if kind == "craft":
-            raise RuntimeError(msg + " — run `pip install craft-text-detector`.")
-        log.warning("%s — falling back to the OpenCV heuristic detector.", msg)
+            msg = f"comic-text-detector failed to load ({e})"
+        if explicit:
+            log.warning("%s — falling back to the OpenCV heuristic detector.", msg)
+        else:
+            log.debug("%s — using the OpenCV heuristic detector.", msg)
     log.info("Text detector: OpenCV heuristic")
     return OpenCVTextDetector()

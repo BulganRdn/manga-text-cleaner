@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import threading
@@ -14,12 +15,35 @@ import cv2
 import numpy as np
 
 from ..core import SUPPORTED_EXTS, load_image, save_image
+from ..core.inpainting import OpenCVInpainter, inpaint_regions
 from ..core.pipeline import clean_page, detect_mask
 from ..core.typeset import render_texts
 
 log = logging.getLogger("mangacleaner")
 
-PROJECTS_ROOT = Path.home() / "Documents" / "MangaCleanerStudio"
+PROJECTS_ROOT = Path(os.environ.get(
+    "MANGACLEANER_PROJECTS_DIR",
+    Path(__file__).resolve().parents[2] / "projects"))
+_LEGACY_ROOT = Path.home() / "Documents" / "MangaCleanerStudio"
+
+
+def migrate_legacy_projects() -> None:
+    """One-time move of projects from Documents/MangaCleanerStudio into the
+    app's own projects/ folder, where users can find and manage them."""
+    if not _LEGACY_ROOT.is_dir() or _LEGACY_ROOT == PROJECTS_ROOT:
+        return
+    for d in list(_LEGACY_ROOT.iterdir()):
+        if not (d / "project.json").is_file():
+            continue
+        dest = PROJECTS_ROOT / d.name
+        if dest.exists():
+            continue
+        PROJECTS_ROOT.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.move(str(d), str(dest))
+            log.info("Migrated project '%s' to %s", d.name, dest)
+        except OSError as e:
+            log.warning("Could not migrate project '%s': %s", d.name, e)
 
 (ST_PENDING, ST_MASKED, ST_PROCESSING, ST_DONE, ST_EDITED, ST_SKIPPED,
  ST_ERROR) = ("pending", "masked", "processing", "done", "edited", "skipped",
@@ -96,6 +120,15 @@ class Project:
         self.job = Job()
         self._job_thread: threading.Thread | None = None
         self._mutate = threading.Lock()
+        migrate_legacy_projects()
+
+    def close(self) -> None:
+        self.name = None
+        self.project_dir = None
+        self.src_dir = None
+        self.last_page = 0
+        self.pages = []
+        self.job = Job()
 
     @property
     def workdir(self) -> Path | None:
@@ -119,6 +152,66 @@ class Project:
                 continue
         out.sort(key=lambda p: -p["modified"])
         return out
+
+    @staticmethod
+    def delete_project(name: str) -> None:
+        d = PROJECTS_ROOT / sanitize_name(name)
+        if not (d / "project.json").is_file():
+            raise ValueError("project_not_found")
+        shutil.rmtree(d)
+
+    @staticmethod
+    def project_cover(name: str, width: int = 220) -> Path:
+        """Cached thumbnail of a project's first page for the projects list."""
+        d = PROJECTS_ROOT / sanitize_name(name)
+        meta = d / "project.json"
+        if not meta.is_file():
+            raise ValueError("project_not_found")
+        cover = d / "thumbs" / "cover.jpg"
+        if cover.is_file():
+            return cover
+        data = json.loads(meta.read_text(encoding="utf-8"))
+        pages = data.get("pages") or []
+        if not pages:
+            raise ValueError("no_pages")
+        src = Path(pages[0]["src"])
+        if not src.is_file():
+            src = d / "sources" / pages[0]["name"]
+        if not src.is_file():
+            raise ValueError("no_pages")
+        img = load_image(src)
+        h, w = img.shape[:2]
+        img = cv2.resize(img, (width, max(1, int(h * width / w))),
+                         interpolation=cv2.INTER_AREA)
+        img = img[:min(img.shape[0], int(width * 1.4))]
+        cover.parent.mkdir(parents=True, exist_ok=True)
+        imwrite_u(cover, img)
+        return cover
+
+    def add_pages(self, paths: list[Path]) -> int:
+        """Copy new images into an open project; duplicates (by name) are
+        skipped. Page indices shift after the natural re-sort, so every
+        version is bumped to invalidate index-keyed thumbnails."""
+        if not self.project_dir:
+            raise ValueError("no_project")
+        existing = {p.name for p in self.pages}
+        added = 0
+        for p in paths:
+            if p.suffix.lower() not in SUPPORTED_EXTS or p.name in existing:
+                continue
+            dst = self.project_dir / "sources" / p.name
+            if p.resolve() != dst.resolve():
+                shutil.copy2(p, dst)
+            self.pages.append(Page(name=dst.name, src=dst))
+            existing.add(dst.name)
+            added += 1
+        if added:
+            self.pages.sort(key=lambda pg: natural_key(pg.name))
+            for pg in self.pages:
+                pg.version += 1
+            (self.project_dir / "thumbs" / "cover.jpg").unlink(missing_ok=True)
+            self.save()
+        return added
 
     def _init_dirs(self) -> None:
         for sub in ("sources", "masks", "results", "texts", "output", "thumbs"):
@@ -179,6 +272,10 @@ class Project:
         self.pages = []
         for p in data.get("pages", []):
             src = Path(p["src"])
+            if not src.is_file():
+                alt = project_dir / "sources" / p["name"]
+                if alt.is_file():
+                    src = alt
             page = Page(name=p["name"], src=src,
                         mask_source=p.get("maskSource", "none"),
                         status=p.get("status", ST_PENDING),
@@ -329,7 +426,8 @@ class Project:
         if mask.shape != img.shape[:2]:
             mask = cv2.resize(mask, (img.shape[1], img.shape[0]),
                               interpolation=cv2.INTER_NEAREST)
-        healed = cv2.inpaint(img, mask, 4, cv2.INPAINT_TELEA)
+        healed = inpaint_regions(OpenCVInpainter(), img, mask,
+                                 margin=32, min_size=64)
         save_image(healed, self._result_path(page))
         page.result = self._result_path(page)
         page.status = ST_EDITED

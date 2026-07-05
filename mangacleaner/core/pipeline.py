@@ -5,8 +5,8 @@ import threading
 import cv2
 import numpy as np
 
-from .detection import build_detector, craft_available
-from .inpainting import build_inpainter, lama_available, pick_device
+from .detection import build_detector, comictextdetector_available
+from .inpainting import build_inpainter, inpaint_regions, lama_available, pick_device
 from .postprocess import feather_blend, preserve_white_balloons, refine_mask
 
 _lock = threading.Lock()
@@ -37,14 +37,16 @@ def detect_mask(img_bgr: np.ndarray, *, detect: str = "both",
     device = pick_device(device)
     h, w = img_bgr.shape[:2]
     scale = max(h, w) / DETECT_MAX_SIDE
-    small = img_bgr
-    if scale > 1:
-        small = cv2.resize(img_bgr, (round(w / scale), round(h / scale)),
-                           interpolation=cv2.INTER_AREA)
-    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
     with _lock:
-        mask = _get_detector(detector, device).detect(small, gray, detect)
-    if scale > 1:
+        det = _get_detector(detector, device)
+        downscale = scale > 1 and det.name != "comictextdetector"
+        small = img_bgr
+        if downscale:
+            small = cv2.resize(img_bgr, (round(w / scale), round(h / scale)),
+                               interpolation=cv2.INTER_AREA)
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        mask = det.detect(small, gray, detect)
+    if downscale:
         mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
         dilate = max(dilate, int(round(dilate * min(scale, 2))))
     return refine_mask(mask, dilate)
@@ -55,7 +57,7 @@ def clean_page(img_bgr: np.ndarray, mask: np.ndarray, *, model: str = "lama",
     device = pick_device(device)
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     with _lock:
-        result = _get_inpainter(model, device)(img_bgr, mask)
+        result = inpaint_regions(_get_inpainter(model, device), img_bgr, mask)
     result = preserve_white_balloons(result, mask, img_bgr, gray)
     return feather_blend(img_bgr, result, mask, feather)
 
@@ -71,5 +73,5 @@ def get_meta() -> dict:
     return {
         "device": pick_device("auto"),
         "lama": lama_available(),
-        "craft": craft_available(),
+        "ctd": comictextdetector_available(),
     }

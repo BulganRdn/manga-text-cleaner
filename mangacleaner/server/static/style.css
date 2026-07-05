@@ -397,3 +397,35 @@ input[type="range"] { accent-color: var(--accent); width: 110px; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #333947; border-radius: 5px; border: 2px solid var(--panel); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+.project-card {
+  display: flex; align-items: center; gap: 11px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.project-card:hover { border-color: var(--accent); }
+.pc-cover {
+  width: 44px; height: 58px; flex: none;
+  object-fit: cover; object-position: top;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.pc-cover.noimg { visibility: hidden; }
+.pc-body { min-width: 0; flex: 1; }
+.pc-body .project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-delete {
+  border: none; background: none; flex: none;
+  color: var(--text-dim); cursor: pointer;
+  padding: 6px; border-radius: 6px;
+}
+.pc-delete:hover { color: #ff6b6b; background: rgba(255, 107, 107, .12); }
+
+#sidebar-head { display: flex; align-items: center; gap: 8px; }
+#btn-add-pages { margin-left: auto; padding: 3px; }
+#page-list.drag { outline: 2px dashed var(--accent); outline-offset: -4px; }
+
+#editor-canvas.tool-poly { cursor: crosshair; }

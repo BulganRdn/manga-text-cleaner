@@ -1,6 +1,6 @@
 "use strict";
 
-const MASK_TOOLS = new Set(["brush", "eraser", "rect"]);
+const MASK_TOOLS = new Set(["brush", "eraser", "rect", "poly"]);
 const REPAIR_TOOLS = new Set(["draw", "restore", "heal"]);
 
 class MaskEditor {
@@ -39,6 +39,8 @@ class MaskEditor {
     this._rectStart = null;
     this._rectEnd = null;
     this._textDrag = null;
+    this._polyPoints = [];
+    this._polyErase = false;
 
     this._bind();
     this._resize();
@@ -72,6 +74,7 @@ class MaskEditor {
     this.selectedText = null;
     this.undoStack = [];
     this.redoStack = [];
+    this._polyPoints = [];
     this.fit();
   }
 
@@ -89,6 +92,7 @@ class MaskEditor {
     this.hasResult = false;
     this.texts = [];
     this.selectedText = null;
+    this._polyPoints = [];
     this.render();
   }
 
@@ -255,10 +259,15 @@ class MaskEditor {
     }, { passive: false });
     c.addEventListener("contextmenu", (e) => e.preventDefault());
     c.addEventListener("dblclick", (e) => {
+      if (this.tool === "poly") {
+        if (this._polyPoints.length > 3) this._polyPoints.pop();
+        this.closePoly();
+        return;
+      }
       if (this.tool !== "text") return;
       const [ix, iy] = this.toImage(this._pos(e).x, this._pos(e).y);
       const hit = this._hitText(ix, iy);
-      if (hit === null) this.cb.onTextCreate?.(ix, iy);
+      if (hit === null && this._hitHandle(ix, iy) === null) this.cb.onTextCreate?.(ix, iy);
     });
   }
 
@@ -299,13 +308,35 @@ class MaskEditor {
       this._rectEnd = this._rectStart;
       return;
     }
+    if (tool === "poly") {
+      this._pointer = null;
+      if (this._polyPoints.length >= 3 && this._nearFirstVertex(p)) {
+        this.closePoly();
+        return;
+      }
+      if (!this._polyPoints.length) this._polyErase = e.button === 2;
+      this._polyPoints.push(this.toImage(p.x, p.y));
+      this.render();
+      return;
+    }
     if (tool === "text") {
       const [ix, iy] = this.toImage(p.x, p.y);
+      const handle = this._hitHandle(ix, iy);
+      if (handle === "rotate") {
+        this._textDrag = { mode: "rotate", pushed: false };
+        return;
+      }
+      if (handle === "resize") {
+        const t = this.texts[this.selectedText];
+        this._textDrag = { mode: "resize", size0: t.size, pushed: false,
+                           d0: Math.max(4, Math.hypot(ix - t.x, iy - t.y)) };
+        return;
+      }
       const hit = this._hitText(ix, iy);
       if (hit !== null) {
         this.selectedText = hit;
         const t = this.texts[hit];
-        this._textDrag = { dx: ix - t.x, dy: iy - t.y, pushed: false };
+        this._textDrag = { mode: "move", dx: ix - t.x, dy: iy - t.y, pushed: false };
         this.cb.onTextSelect?.(hit);
       } else {
         this.selectedText = null;
@@ -323,7 +354,17 @@ class MaskEditor {
   _move(e) {
     const p = this._pos(e);
     this._cursorPos = p;
-    if (!this._pointer) { this.render(); return; }
+    if (!this._pointer) {
+      if (this.tool === "text" && this.original) {
+        const [ix, iy] = this.toImage(p.x, p.y);
+        const h = this._hitHandle(ix, iy);
+        this.canvas.style.cursor = h === "rotate" ? "grab"
+          : h === "resize" ? "nwse-resize"
+          : this._hitText(ix, iy) !== null ? "move" : "";
+      }
+      this.render();
+      return;
+    }
     const { tool, last } = this._pointer;
     this._pointer.moved = true;
 
@@ -344,9 +385,20 @@ class MaskEditor {
         if (!this._textDrag.pushed) { this.pushHistory("texts"); this._textDrag.pushed = true; }
         const [ix, iy] = this.toImage(p.x, p.y);
         const t = this.texts[this.selectedText];
-        t.x = ix - this._textDrag.dx;
-        t.y = iy - this._textDrag.dy;
+        const d = this._textDrag;
+        if (d.mode === "rotate") {
+          let ang = (Math.atan2(iy - t.y, ix - t.x) * 180) / Math.PI + 90;
+          if (ang > 180) ang -= 360;
+          t.rotation = e.shiftKey ? Math.round(ang / 15) * 15 : Math.round(ang * 10) / 10;
+        } else if (d.mode === "resize") {
+          const dist = Math.hypot(ix - t.x, iy - t.y);
+          t.size = Math.max(6, Math.min(300, Math.round(d.size0 * (dist / d.d0))));
+        } else {
+          t.x = ix - d.dx;
+          t.y = iy - d.dy;
+        }
         this.cb.onDirty?.("texts");
+        this.cb.onTextChange?.();
         this.render();
       }
       this._pointer.last = p;
@@ -437,8 +489,51 @@ class MaskEditor {
 
   setTool(tool) {
     this.tool = tool;
+    this._polyPoints = [];
+    this.canvas.style.cursor = "";
     if (tool !== "text") { this.selectedText = null; this.cb.onTextSelect?.(null); }
     this.canvas.classList.toggle("tool-pan", tool === "pan");
+    this.canvas.classList.toggle("tool-poly", tool === "poly");
+    this.render();
+  }
+
+  get polyCount() { return this._polyPoints.length; }
+
+  _nearFirstVertex(p) {
+    if (!this._polyPoints.length) return false;
+    const v = this.view;
+    const [fx, fy] = this._polyPoints[0];
+    return Math.hypot(p.x - (v.tx + fx * v.scale), p.y - (v.ty + fy * v.scale)) < 12;
+  }
+
+  closePoly() {
+    const pts = this._polyPoints;
+    this._polyPoints = [];
+    if (pts.length < 3) { this.render(); return; }
+    this.pushHistory("mask");
+    const ctx = this.maskCtx;
+    ctx.globalCompositeOperation = this._polyErase ? "destination-out" : "source-over";
+    ctx.fillStyle = "rgba(255,0,0,1)";
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+    this.cb.onDirty?.("mask");
+    this.render();
+  }
+
+  cancelPoly() {
+    if (!this._polyPoints.length) return false;
+    this._polyPoints = [];
+    this.render();
+    return true;
+  }
+
+  popPolyPoint() {
+    if (!this._polyPoints.length) return;
+    this._polyPoints.pop();
     this.render();
   }
 
@@ -463,13 +558,40 @@ class MaskEditor {
     return { x: t.x - w / 2, y: t.y - h / 2, w, h, lh };
   }
 
+  _textLocal(t, ix, iy) {
+    const a = (-(t.rotation || 0) * Math.PI) / 180;
+    const dx = ix - t.x, dy = iy - t.y;
+    return [dx * Math.cos(a) - dy * Math.sin(a),
+            dx * Math.sin(a) + dy * Math.cos(a)];
+  }
+
   _hitText(ix, iy) {
     for (let i = this.texts.length - 1; i >= 0; i--) {
-      const b = this._textBox(this.texts[i]);
+      const t = this.texts[i];
+      const b = this._textBox(t);
+      const [lx, ly] = this._textLocal(t, ix, iy);
       const pad = 8;
-      if (ix >= b.x - pad && ix <= b.x + b.w + pad &&
-          iy >= b.y - pad && iy <= b.y + b.h + pad) return i;
+      if (Math.abs(lx) <= b.w / 2 + pad && Math.abs(ly) <= b.h / 2 + pad) return i;
     }
+    return null;
+  }
+
+  _handleLayout(t) {
+    const b = this._textBox(t);
+    const s = this.view.scale;
+    const hw = b.w / 2 + 8 / s, hh = b.h / 2 + 8 / s;
+    return { hw, hh, rotate: [0, -hh - 24 / s], resize: [hw, hh], r: 7 / s };
+  }
+
+  _hitHandle(ix, iy) {
+    if (this.selectedText === null || this.tool !== "text") return null;
+    const t = this.texts[this.selectedText];
+    if (!t) return null;
+    const [lx, ly] = this._textLocal(t, ix, iy);
+    const g = this._handleLayout(t);
+    const hit = 12 / this.view.scale;
+    if (Math.hypot(lx - g.rotate[0], ly - g.rotate[1]) <= hit) return "rotate";
+    if (Math.hypot(lx - g.resize[0], ly - g.resize[1]) <= hit) return "resize";
     return null;
   }
 
@@ -522,29 +644,44 @@ class MaskEditor {
       for (let i = 0; i < this.texts.length; i++) {
         const t = this.texts[i];
         const lines = this._textLines(t);
+        ctx.save();
+        ctx.translate(t.x, t.y);
+        ctx.rotate(((t.rotation || 0) * Math.PI) / 180);
         ctx.font = this._textFont(t);
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         const lh = t.size * 1.25;
-        const y0 = t.y - ((lines.length - 1) * lh) / 2;
+        const y0 = -((lines.length - 1) * lh) / 2;
         for (let li = 0; li < lines.length; li++) {
           if (t.stroke > 0) {
             ctx.strokeStyle = t.strokeColor || "#ffffff";
             ctx.lineWidth = t.stroke * 2;
             ctx.lineJoin = "round";
-            ctx.strokeText(lines[li], t.x, y0 + li * lh);
+            ctx.strokeText(lines[li], 0, y0 + li * lh);
           }
           ctx.fillStyle = t.color || "#000000";
-          ctx.fillText(lines[li], t.x, y0 + li * lh);
+          ctx.fillText(lines[li], 0, y0 + li * lh);
         }
         if (i === this.selectedText && this.tool === "text") {
-          const b = this._textBox(t);
+          const g = this._handleLayout(t);
           ctx.strokeStyle = "#5b8cff";
           ctx.lineWidth = 1.5 / v.scale;
           ctx.setLineDash([5 / v.scale, 4 / v.scale]);
-          ctx.strokeRect(b.x - 6, b.y - 6, b.w + 12, b.h + 12);
+          ctx.strokeRect(-g.hw, -g.hh, g.hw * 2, g.hh * 2);
           ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.moveTo(0, -g.hh);
+          ctx.lineTo(g.rotate[0], g.rotate[1]);
+          ctx.stroke();
+          ctx.fillStyle = "#fff";
+          ctx.beginPath();
+          ctx.arc(g.rotate[0], g.rotate[1], g.r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillRect(g.resize[0] - g.r, g.resize[1] - g.r, g.r * 2, g.r * 2);
+          ctx.strokeRect(g.resize[0] - g.r, g.resize[1] - g.r, g.r * 2, g.r * 2);
         }
+        ctx.restore();
       }
     }
 
@@ -556,6 +693,33 @@ class MaskEditor {
       ctx.strokeRect(Math.min(x0, x1), Math.min(y0, y1),
                      Math.abs(x1 - x0), Math.abs(y1 - y0));
       ctx.setLineDash([]);
+    }
+
+    if (this._polyPoints.length) {
+      const pts = this._polyPoints;
+      const near = this._cursorPos && pts.length >= 3 &&
+                   this._nearFirstVertex(this._cursorPos);
+      ctx.strokeStyle = this._polyErase ? "#e8b339" : "#5b8cff";
+      ctx.lineWidth = 1.5 / v.scale;
+      ctx.setLineDash([6 / v.scale, 4 / v.scale]);
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      if (this._cursorPos) {
+        if (near) ctx.lineTo(pts[0][0], pts[0][1]);
+        else {
+          const [cx, cy] = this.toImage(this._cursorPos.x, this._cursorPos.y);
+          ctx.lineTo(cx, cy);
+        }
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      for (let i = 0; i < pts.length; i++) {
+        ctx.beginPath();
+        ctx.arc(pts[i][0], pts[i][1], (i === 0 && near ? 6 : 3.5) / v.scale, 0, Math.PI * 2);
+        ctx.fillStyle = i === 0 && near ? "#3fbf75" : "#fff";
+        ctx.fill();
+      }
     }
     ctx.restore();
 

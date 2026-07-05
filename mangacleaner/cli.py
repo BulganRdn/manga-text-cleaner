@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -91,8 +92,8 @@ def main() -> None:
     ap.add_argument("--batch", action="store_true", help="process every image in the folder")
     ap.add_argument("--detect", choices=["both", "balloon", "sfx"], default="both",
                     help="what to remove")
-    ap.add_argument("--detector", choices=["auto", "craft", "opencv"], default="auto",
-                    help="text detector")
+    ap.add_argument("--detector", choices=["auto", "comictextdetector", "opencv"],
+                    default="auto", help="text detector")
     ap.add_argument("--mask", default=None, help="hand-edited mask image (single input)")
     ap.add_argument("--mask-dir", default=None,
                     help="folder searched for <name>_mask.png files in batch mode")
@@ -105,7 +106,22 @@ def main() -> None:
     ap.add_argument("--dilate", type=int, default=6, help="mask dilation (px)")
     ap.add_argument("--feather", type=int, default=3, help="edge feathering (px)")
     ap.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
+    ap.add_argument("--ctd-conf", type=float, default=None, metavar="0..1",
+                    help="comictextdetector: text-block confidence "
+                         "(lower finds more text)")
+    ap.add_argument("--ctd-mask-thresh", type=float, default=None, metavar="0..1",
+                    help="comictextdetector: mask pixel threshold "
+                         "(lower makes thicker masks)")
+    ap.add_argument("--ctd-line-thresh", type=float, default=None, metavar="0..1",
+                    help="comictextdetector: acceptance of text lines the "
+                         "block detector missed")
     args = ap.parse_args()
+
+    for val, env in ((args.ctd_conf, "MANGACLEANER_CTD_CONF"),
+                     (args.ctd_mask_thresh, "MANGACLEANER_CTD_MASK_THRESH"),
+                     (args.ctd_line_thresh, "MANGACLEANER_CTD_LINE_THRESH")):
+        if val is not None:
+            os.environ[env] = str(val)
 
     input_path = Path(args.input)
     files = collect_inputs(input_path, args.batch)

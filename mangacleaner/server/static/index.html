@@ -63,6 +63,9 @@
     <button class="tool" data-tool="rect" data-i18n-title="tool_rect" title="Rectangle">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"><rect x="4" y="5" width="16" height="14" rx="1"/></svg>
     </button>
+    <button class="tool" data-tool="poly" data-i18n-title="tool_poly" title="Polygon mask">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-dasharray="4 3"><path d="M12 3l8.5 6.2-3.2 10H6.7L3.5 9.2z"/></svg>
+    </button>
     <button class="tool" data-tool="pan" data-i18n-title="tool_pan" title="Pan">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 00-4 0v5m0-3.5V4a2 2 0 00-4 0v7m0-5.5V6a2 2 0 00-4 0v8m12-3v-2a2 2 0 014 0v4c0 4-3 7-7 7h-2c-2.5 0-4.5-1.2-6-3.2L4 14.5c-.8-1-.5-2.5.7-3 .9-.4 1.9-.1 2.5.7L8 13"/></svg>
     </button>
@@ -163,6 +166,8 @@
           <input type="color" id="text-stroke-color" value="#ffffff"></label>
       </div>
       <div class="tp-row">
+        <label><span data-i18n="text_rotation">Rotate°</span>
+          <input type="number" id="text-rotation" min="-180" max="180" step="1" value="0"></label>
         <label class="check"><input type="checkbox" id="text-bold" checked>
           <span data-i18n="text_bold">Bold</span></label>
         <button class="btn danger" id="text-delete" data-i18n="text_delete">Delete</button>
@@ -175,6 +180,10 @@
     <div id="sidebar-head">
       <span data-i18n="pages">pages</span>
       <span id="page-count"></span>
+      <button class="icon-btn" id="btn-add-pages" style="display:none" data-i18n-title="add_pages" title="Add pages">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <input type="file" id="add-pages-input" multiple accept=".jpg,.jpeg,.png,.webp" hidden>
     </div>
     <div id="page-list"></div>
   </aside>
@@ -220,7 +229,7 @@
       </div>
     </div>
     <div class="backend-note" id="lama-note" data-i18n="lama_missing"></div>
-    <div class="backend-note" id="craft-note" data-i18n="craft_missing"></div>
+    <div class="backend-note" id="detector-note" data-i18n="detector_missing"></div>
   </div>
 </div>
 
@@ -241,7 +250,7 @@
         <label data-i18n="set_detector">Text detector</label>
         <select id="set-detector">
           <option value="auto" data-i18n="det_auto">Auto</option>
-          <option value="craft">CRAFT</option>
+          <option value="comictextdetector" data-i18n="det_ctd">Comic Text Detector (manga)</option>
           <option value="opencv">OpenCV</option>
         </select>
       </div>

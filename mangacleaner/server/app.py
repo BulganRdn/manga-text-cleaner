@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from ..core import load_image
 from ..core.pipeline import detect_mask, get_meta
 from .. import __version__
-from .project import Project
+from .project import Project, sanitize_name
 
 log = logging.getLogger("mangacleaner")
 
@@ -149,6 +149,50 @@ def open_project(name: str):
     except ValueError as e:
         raise HTTPException(404, str(e))
     return project.state()
+
+
+@app.delete("/api/projects/{name}")
+def delete_project(name: str):
+    is_open = project.name == sanitize_name(name)
+    if is_open and project.job.running:
+        raise HTTPException(409, "job_running")
+    try:
+        Project.delete_project(name)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except OSError as e:
+        raise HTTPException(500, f"delete_failed: {e}")
+    if is_open:
+        project.close()
+    return {"ok": True}
+
+
+@app.get("/api/projects/{name}/cover")
+def project_cover(name: str):
+    try:
+        return FileResponse(Project.project_cover(name))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/project/pages/upload")
+async def add_pages_upload(files: list[UploadFile] = File(...)):
+    if not project.pages:
+        raise HTTPException(400, "no_project")
+    updir = Path(tempfile.mkdtemp(prefix="manga_addpages_"))
+    saved = []
+    for f in files:
+        fname = Path(f.filename or "page.png").name
+        if Path(fname).suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+            continue
+        dst = updir / fname
+        dst.write_bytes(await f.read())
+        saved.append(dst)
+    try:
+        added = project.add_pages(saved)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {**project.state(), "added": added}
 
 
 @app.get("/api/project")

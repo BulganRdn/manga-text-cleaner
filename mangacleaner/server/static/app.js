@@ -68,6 +68,7 @@ function initEditor() {
     onDirty: (kind) => { state.dirty[kind] = true; },
     onHealStroke: healStroke,
     onTextSelect: onTextSelect,
+    onTextChange: syncTextPanel,
     onTextCreate: (x, y) => {
       editor.addText({ x, y, text: t("text_placeholder"), ...textDefaults });
       openTextPanel();
@@ -96,6 +97,7 @@ function renderSidebar() {
   $("#btn-detect-all").disabled = !hasPages;
   $("#btn-process").disabled = !hasPages;
   $("#btn-export").disabled = !hasPages;
+  $("#btn-add-pages").style.display = hasPages ? "" : "none";
   const sel = $(".page-item.selected");
   if (sel) sel.scrollIntoView({ block: "nearest" });
 }
@@ -192,14 +194,67 @@ async function refreshProjectList() {
     }
     res.projects.forEach((p) => {
       const el = document.createElement("div");
-      el.className = "project-item";
+      el.className = "project-card";
       const when = new Date(p.modified * 1000).toLocaleDateString();
-      el.innerHTML = `<span class="project-name">${p.name}</span>
-        <span class="project-meta">${p.pages} ${t("pages")} · ${when}</span>`;
+      el.innerHTML = `
+        <img class="pc-cover" loading="lazy" alt=""
+             src="/api/projects/${encodeURIComponent(p.name)}/cover">
+        <div class="pc-body">
+          <div class="project-name" title="${p.name}">${p.name}</div>
+          <div class="project-meta">${p.pages} ${t("pages")} · ${when}</div>
+        </div>
+        <button class="pc-delete" title="${t("delete_project")}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2m2 0l-1 14a1 1 0 01-1 1H8a1 1 0 01-1-1L6 6"/><path d="M10 11v6M14 11v6"/></svg>
+        </button>`;
+      el.querySelector(".pc-cover").addEventListener("error",
+        (ev) => ev.target.classList.add("noimg"));
       el.addEventListener("click", () => openProjectByName(p.name));
+      el.querySelector(".pc-delete").addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        if (!confirm(t("confirm_delete_project", { name: p.name }))) return;
+        try {
+          await api(`/projects/${encodeURIComponent(p.name)}`, { method: "DELETE" });
+          toast(t("project_deleted"), "info");
+          if (state.projectName === p.name) resetToNoProject();
+          refreshProjectList();
+        } catch (e) { errToast(e); }
+      });
       box.appendChild(el);
     });
   } catch {}
+}
+
+function resetToNoProject() {
+  state.pages = [];
+  state.current = null;
+  state.projectName = null;
+  state.dirty = { mask: false, result: false, texts: false };
+  $("#project-info").textContent = "";
+  renderSidebar();
+  editor.clear();
+  $("#canvas-empty").style.display = "flex";
+  $("#empty-text").textContent = t("no_page");
+}
+
+async function addPages(files) {
+  if (!state.pages.length || !files || !files.length) return;
+  const fd = new FormData();
+  [...files].forEach((f) => fd.append("files", f));
+  try {
+    const res = await fetch("/api/project/pages/upload", { method: "POST", body: fd });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    const st = await res.json();
+    const curName = state.current !== null && state.pages[state.current]
+      ? state.pages[state.current].name : null;
+    state.pages = st.pages;
+    if (curName) {
+      const cur = st.pages.find((p) => p.name === curName);
+      state.current = cur ? cur.index : null;
+    }
+    renderSidebar();
+    toast(st.added ? t("pages_added", { n: st.added }) : t("pages_added_none"),
+          st.added ? "success" : "warn");
+  } catch (e) { errToast(e); }
 }
 
 async function openProjectByName(name) {
@@ -397,6 +452,7 @@ function syncTextPanel() {
   $("#text-stroke-color").value = src.strokeColor;
   $("#text-font").value = src.font;
   $("#text-bold").checked = !!src.bold;
+  $("#text-rotation").value = Math.round(src.rotation || 0);
 }
 
 function applyTextPanel(field, value) {
@@ -516,6 +572,10 @@ function bindUI() {
     b.addEventListener("click", () => closeModal(b.dataset.close)));
 
   const s = settings;
+  if (!["auto", "comictextdetector", "opencv"].includes(s.detector)) {
+    s.detector = "auto";
+    saveSettings();
+  }
   $("#set-detect").value = s.detect;
   $("#set-detector").value = s.detector;
   $("#set-model").value = s.model;
@@ -549,12 +609,41 @@ function bindUI() {
   $("#text-stroke-color").addEventListener("input", (e) => applyTextPanel("strokeColor", e.target.value));
   $("#text-font").addEventListener("change", (e) => applyTextPanel("font", e.target.value));
   $("#text-bold").addEventListener("change", (e) => applyTextPanel("bold", e.target.checked));
+  $("#text-rotation").addEventListener("change", (e) => {
+    if (editor.selectedText === null) return;
+    editor.texts[editor.selectedText].rotation =
+      Math.max(-180, Math.min(180, +e.target.value || 0));
+    state.dirty.texts = true;
+    editor.render();
+  });
   $("#text-delete").addEventListener("click", () => { editor.deleteSelectedText(); });
+
+  $("#btn-add-pages").addEventListener("click", () => $("#add-pages-input").click());
+  $("#add-pages-input").addEventListener("change", () => {
+    addPages($("#add-pages-input").files);
+    $("#add-pages-input").value = "";
+  });
+  const plist = $("#page-list");
+  ["dragenter", "dragover"].forEach((ev) =>
+    plist.addEventListener(ev, (e) => {
+      if (!state.pages.length) return;
+      e.preventDefault();
+      plist.classList.add("drag");
+    }));
+  ["dragleave", "drop"].forEach((ev) =>
+    plist.addEventListener(ev, (e) => { e.preventDefault(); plist.classList.remove("drag"); }));
+  plist.addEventListener("drop", (e) => addPages(e.dataTransfer.files));
 
   window.addEventListener("keydown", (e) => {
     if (e.target instanceof Element && e.target.matches("input, select, textarea")) return;
     if (anyModalOpen()) {
       if (e.key === "Escape") $$(".modal-backdrop.open").forEach((m) => m.classList.remove("open"));
+      return;
+    }
+    if (e.key === "Escape") { editor.cancelPoly(); return; }
+    if (e.key === "Backspace" && editor.tool === "poly") {
+      e.preventDefault();
+      editor.popPolyPoint();
       return;
     }
     if (e.code === "Space") { editor.setSpacePan(true); e.preventDefault(); return; }
@@ -577,13 +666,17 @@ function bindUI() {
     if (k === "b") setTool("brush");
     else if (k === "e") setTool("eraser");
     else if (k === "r") setTool("rect");
+    else if (k === "l") setTool("poly");
     else if (k === "h") setTool("pan");
     else if (k === "p") setTool("draw");
     else if (k === "o") setTool("restore");
     else if (k === "j") setTool("heal");
     else if (k === "t") setTool("text");
     else if (k === "d") detectPage();
-    else if (k === "enter") cleanPage();
+    else if (k === "enter") {
+      if (editor.tool === "poly" && editor.polyCount >= 3) editor.closePoly();
+      else cleanPage();
+    }
     else if (k === "m") $("#btn-mask-vis").click();
     else if (k === "c") { editor.showOriginal = true; $("#compare-flag").classList.add("on"); editor.render(); }
     else if (k === "[") { $("#brush-size").value = Math.max(2, editor.brushSize - 4); $("#brush-size").dispatchEvent(new Event("input")); }
@@ -619,9 +712,10 @@ async function boot() {
     state.meta = await api("/meta");
     $("#sb-backend").textContent =
       `${state.meta.device.toUpperCase()} · ` +
-      `${state.meta.lama ? "LaMa" : "OpenCV"} / ${state.meta.craft ? "CRAFT" : "heuristic"}`;
+      `${state.meta.lama ? "LaMa" : "OpenCV"} / ` +
+      `${state.meta.ctd ? "CTD" : "heuristic"}`;
     if (!state.meta.lama) $("#lama-note").classList.add("show");
-    if (!state.meta.craft) $("#craft-note").classList.add("show");
+    if (!state.meta.ctd) $("#detector-note").classList.add("show");
   } catch {}
 
   try {
