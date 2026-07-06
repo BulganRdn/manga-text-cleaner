@@ -117,6 +117,12 @@ function redoEdit() {
   editor.redo();
 }
 
+function adjustBrushSize(delta) {
+  const el = $("#brush-size");
+  el.value = Math.max(2, Math.min(200, editor.brushSize + delta));
+  el.dispatchEvent(new Event("input"));
+}
+
 function initEditor() {
   editor = new MaskEditor($("#editor-canvas"), {
     onView: (v) => { $("#sb-zoom").textContent = Math.round(v.scale * 100) + "%"; },
@@ -736,6 +742,16 @@ function bindUI() {
       else undoEdit();
       return;
     }
+    if (mod && (e.code === "Minus" || e.code === "NumpadSubtract")) {
+      e.preventDefault();
+      adjustBrushSize(-4);
+      return;
+    }
+    if (mod && (e.code === "Equal" || e.code === "NumpadAdd")) {
+      e.preventDefault();
+      adjustBrushSize(4);
+      return;
+    }
     if (e.target instanceof Element && e.target.matches("input, select, textarea")) return;
     if (anyModalOpen()) {
       if (e.key === "Escape") $$(".modal-backdrop.open").forEach((m) => m.classList.remove("open"));
@@ -778,8 +794,8 @@ function bindUI() {
     }
     else if (k === "m") $("#btn-mask-vis").click();
     else if (k === "c") { editor.showOriginal = true; $("#compare-flag").classList.add("on"); editor.render(); }
-    else if (k === "[") { $("#brush-size").value = Math.max(2, editor.brushSize - 4); $("#brush-size").dispatchEvent(new Event("input")); }
-    else if (k === "]") { $("#brush-size").value = Math.min(200, editor.brushSize + 4); $("#brush-size").dispatchEvent(new Event("input")); }
+    else if (k === "[") adjustBrushSize(-4);
+    else if (k === "]") adjustBrushSize(4);
     else if (k === "+" || k === "=") editor.zoomBy(1.25);
     else if (k === "-") editor.zoomBy(1 / 1.25);
     else if (k === "0") editor.fit();
