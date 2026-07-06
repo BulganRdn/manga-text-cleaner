@@ -659,8 +659,21 @@ function syncTextPanel() {
   $("#text-bold").checked = !!src.bold;
   $("#text-bold").disabled = !!src.fontPath;
   $("#text-rotation").value = Math.round(src.rotation || 0);
+  $("#text-skew").value = Math.round(src.skew || 0);
+  $("#text-scalex").value = Math.round((src.scaleX || 1) * 100);
+  $("#text-scaley").value = Math.round((src.scaleY || 1) * 100);
+  $("#text-gradient").checked = !!src.gradient;
+  $("#text-color2").value = src.color2 || "#ff4040";
   $("#text-fit").style.display = t0 && t0.region ? "" : "none";
   $("#text-fit").classList.toggle("active", !!(t0 && t0.fit));
+}
+
+function applyTextTransform(field, value) {
+  if (editor.selectedText === null) return;
+  ensureTextHistory();
+  editor.texts[editor.selectedText][field] = value;
+  state.dirty.texts = true;
+  editor.render();
 }
 
 function applyTextPanel(field, value) {
@@ -890,14 +903,18 @@ function bindUI() {
       renderFontRows($("#font-search").value);
     } catch (e) { errToast(e); }
   });
-  $("#text-rotation").addEventListener("change", (e) => {
-    if (editor.selectedText === null) return;
-    ensureTextHistory();
-    editor.texts[editor.selectedText].rotation =
-      Math.max(-180, Math.min(180, +e.target.value || 0));
-    state.dirty.texts = true;
-    editor.render();
-  });
+  $("#text-rotation").addEventListener("change", (e) =>
+    applyTextTransform("rotation", Math.max(-180, Math.min(180, +e.target.value || 0))));
+  $("#text-skew").addEventListener("change", (e) =>
+    applyTextTransform("skew", Math.max(-60, Math.min(60, +e.target.value || 0))));
+  $("#text-scalex").addEventListener("change", (e) =>
+    applyTextTransform("scaleX", Math.max(0.2, Math.min(5, (+e.target.value || 100) / 100))));
+  $("#text-scaley").addEventListener("change", (e) =>
+    applyTextTransform("scaleY", Math.max(0.2, Math.min(5, (+e.target.value || 100) / 100))));
+  $("#text-gradient").addEventListener("change", (e) =>
+    applyTextTransform("gradient", e.target.checked));
+  $("#text-color2").addEventListener("input", (e) =>
+    applyTextTransform("color2", e.target.value));
   $("#text-delete").addEventListener("click", () => { editor.deleteSelectedText(); });
 
   $("#btn-add-pages").addEventListener("click", () => $("#add-pages-input").click());

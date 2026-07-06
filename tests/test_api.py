@@ -198,6 +198,42 @@ def run_tests(chapter: Path) -> None:
         "lines field should render as a wrapped tall block"
     print("wrapped-lines typeset: OK")
 
+    def principal_angle(img_bgr) -> float:
+        g = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+        ys, xs = np.where(g < 100)
+        pts = np.stack([xs, ys], 1).astype(np.float32)
+        pts -= pts.mean(0)
+        _evals, evecs = np.linalg.eigh(pts.T @ pts)
+        main = evecs[:, -1]
+        return float(np.degrees(np.arctan2(main[1], main[0]))) % 180
+
+    canvas = np.full((500, 500, 3), 255, np.uint8)
+    out = render_texts(canvas, [{"x": 250, "y": 250, "text": "IIIIIIIIII",
+                                 "size": 36, "color": "#000000",
+                                 "rotation": 45, "scaleX": 2}])
+    ang = principal_angle(out)
+    assert abs(ang - 45) < 6, f"rotated+stretched block axis {ang:.1f} (want 45)"
+    canvas = np.full((500, 500, 3), 255, np.uint8)
+    out = render_texts(canvas, [{"x": 250, "y": 250, "text": "I\nI\nI\nI\nI",
+                                 "size": 36, "color": "#000000", "skew": 45}])
+    ang = principal_angle(out)
+    assert abs(ang - 45) < 8, f"sheared vertical block axis {ang:.1f} (want 45)"
+    print("transform export parity (rotation/stretch/skew geometry): OK")
+
+    canvas = np.full((400, 400, 3), 255, np.uint8)
+    out = render_texts(canvas, [{"x": 200, "y": 200, "text": "MMMM\nMMMM\nMMMM",
+                                 "size": 48, "color": "#000000",
+                                 "gradient": True, "color2": "#ffffff",
+                                 "stroke": 0}])
+    g = cv2.cvtColor(out, cv2.COLOR_BGR2GRAY)
+    glyph = g < 250
+    ys = np.where(glyph.any(axis=1))[0]
+    mid = (ys.min() + ys.max()) // 2
+    top = g[ys.min():mid][glyph[ys.min():mid]].mean()
+    bot = g[mid:ys.max()][glyph[mid:ys.max()]].mean()
+    assert top + 25 < bot, f"gradient not vertical (top {top:.0f} vs bottom {bot:.0f})"
+    print("gradient fill export: OK")
+
     r = client.get("/api/fonts")
     assert r.status_code == 200, r.text
     fonts = r.json()["fonts"]

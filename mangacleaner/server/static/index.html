@@ -182,8 +182,22 @@
       <div class="tp-row">
         <label><span data-i18n="text_rotation">Rotate°</span>
           <input type="number" id="text-rotation" min="-180" max="180" step="1" value="0"></label>
+        <label><span data-i18n="text_skew">Skew°</span>
+          <input type="number" id="text-skew" min="-60" max="60" step="1" value="0"></label>
         <label class="check"><input type="checkbox" id="text-bold" checked>
           <span data-i18n="text_bold">Bold</span></label>
+      </div>
+      <div class="tp-row">
+        <label><span data-i18n="text_stretch_x">Stretch X%</span>
+          <input type="number" id="text-scalex" min="20" max="500" step="5" value="100"></label>
+        <label><span data-i18n="text_stretch_y">Stretch Y%</span>
+          <input type="number" id="text-scaley" min="20" max="500" step="5" value="100"></label>
+      </div>
+      <div class="tp-row">
+        <label class="check"><input type="checkbox" id="text-gradient">
+          <span data-i18n="text_gradient">Gradient</span></label>
+        <label><span data-i18n="text_gradient_to">to</span>
+          <input type="color" id="text-color2" value="#ff4040"></label>
         <button class="btn" id="text-fit" style="display:none" data-i18n-title="text_fit_hint" title="Re-wrap and size to the balloon">
           <span data-i18n="text_fit">Fit</span>
         </button>

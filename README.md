@@ -135,11 +135,19 @@ restored when you reopen it.
    * **Restore `O`** — brush the *original* pixels back wherever inpainting
      damaged the art
    * **Spot heal `J`** — paint over a flaw and it is re-inpainted instantly
-   * **Text `T`** — double-click to place a translation where the original
-     text was: font / size / color / outline; drag to move, drag the corner
-     square to resize, drag the top knob to rotate smoothly (Shift snaps to
-     15°), `Del` deletes; stored per page and **burned into the exported
-     files** (rotation included)
+   * **Text `T`** — double-click a detected balloon and the text box is
+     **auto-centered in it, word-wrapped to its width and sized to fit**
+     (stays live while you type; the Fit button re-applies it after manual
+     tweaks). Font / size / color / outline plus SFX transforms: drag the
+     corner square to resize, edge diamonds to stretch each axis, the top
+     knob to rotate smoothly (Shift snaps to 15°), skew and a two-color
+     gradient fill from the panel. `Del` deletes; everything is stored per
+     page and **burned into the exported files exactly as previewed** —
+     the export replays the same transform math and the same font files
+   * **Fonts** — the picker lists every font installed on the OS plus any
+     `.ttf`/`.otf` dropped into the app's `fonts/` folder, searchable with
+     live previews; fonts without Cyrillic glyphs are flagged before you
+     pick them
    * **Undo / redo across mask, paint, and text edits** (Ctrl+Z / Ctrl+Y)
 6. **Export** — original filenames into the project's `output/` folder (or
    any folder you pick), translations rendered in, plus a ZIP download.

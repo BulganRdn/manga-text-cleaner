@@ -356,6 +356,13 @@ class MaskEditor {
                            d0: Math.max(4, Math.hypot(ix - t.x, iy - t.y)) };
         return;
       }
+      if (handle === "stretchx" || handle === "stretchy") {
+        const t = this.texts[this.selectedText];
+        const b = this._textBox(t);
+        this._textDrag = { mode: handle, pushed: false,
+                           hw0: Math.max(4, b.w / 2), hh0: Math.max(4, b.h / 2) };
+        return;
+      }
       const hit = this._hitText(ix, iy);
       if (hit !== null) {
         this.selectedText = hit;
@@ -395,6 +402,8 @@ class MaskEditor {
         const h = this._hitHandle(ix, iy);
         this.canvas.style.cursor = h === "rotate" ? "grab"
           : h === "resize" ? "nwse-resize"
+          : h === "stretchx" ? "ew-resize"
+          : h === "stretchy" ? "ns-resize"
           : this._hitText(ix, iy) !== null ? "move" : "";
       }
       this.render();
@@ -428,6 +437,12 @@ class MaskEditor {
         } else if (d.mode === "resize") {
           const dist = Math.hypot(ix - t.x, iy - t.y);
           t.size = Math.max(6, Math.min(300, Math.round(d.size0 * (dist / d.d0))));
+          t.fit = false;
+        } else if (d.mode === "stretchx" || d.mode === "stretchy") {
+          const [lx, ly] = this._textLocalNoScale(t, ix, iy);
+          const clamp = (v) => Math.max(0.2, Math.min(5, Math.round(v * 100) / 100));
+          if (d.mode === "stretchx") t.scaleX = clamp(Math.abs(lx) / d.hw0);
+          else t.scaleY = clamp(Math.abs(ly) / d.hh0);
           t.fit = false;
         } else {
           t.x = ix - d.dx;
@@ -722,11 +737,22 @@ class MaskEditor {
     return { x: t.x - w / 2, y: t.y - h / 2, w, h, lh };
   }
 
-  _textLocal(t, ix, iy) {
+  _textLocalNoScale(t, ix, iy) {
     const a = (-(t.rotation || 0) * Math.PI) / 180;
     const dx = ix - t.x, dy = iy - t.y;
-    return [dx * Math.cos(a) - dy * Math.sin(a),
-            dx * Math.sin(a) + dy * Math.cos(a)];
+    let lx = dx * Math.cos(a) - dy * Math.sin(a);
+    const ly = dx * Math.sin(a) + dy * Math.cos(a);
+    lx -= Math.tan(((t.skew || 0) * Math.PI) / 180) * ly;
+    return [lx, ly];
+  }
+
+  _textLocal(t, ix, iy) {
+    const [lx, ly] = this._textLocalNoScale(t, ix, iy);
+    return [lx / (t.scaleX || 1), ly / (t.scaleY || 1)];
+  }
+
+  _textScaleAvg(t) {
+    return Math.max(0.25, (Math.abs(t.scaleX || 1) + Math.abs(t.scaleY || 1)) / 2);
   }
 
   _hitText(ix, iy) {
@@ -742,9 +768,10 @@ class MaskEditor {
 
   _handleLayout(t) {
     const b = this._textBox(t);
-    const s = this.view.scale;
+    const s = this.view.scale * this._textScaleAvg(t);
     const hw = b.w / 2 + 8 / s, hh = b.h / 2 + 8 / s;
-    return { hw, hh, rotate: [0, -hh - 24 / s], resize: [hw, hh], r: 7 / s };
+    return { hw, hh, rotate: [0, -hh - 24 / s], resize: [hw, hh],
+             stretchX: [hw, 0], stretchY: [0, hh], r: 7 / s };
   }
 
   _hitHandle(ix, iy) {
@@ -753,9 +780,11 @@ class MaskEditor {
     if (!t) return null;
     const [lx, ly] = this._textLocal(t, ix, iy);
     const g = this._handleLayout(t);
-    const hit = 12 / this.view.scale;
+    const hit = 12 / (this.view.scale * this._textScaleAvg(t));
     if (Math.hypot(lx - g.rotate[0], ly - g.rotate[1]) <= hit) return "rotate";
     if (Math.hypot(lx - g.resize[0], ly - g.resize[1]) <= hit) return "resize";
+    if (Math.hypot(lx - g.stretchX[0], ly - g.stretchX[1]) <= hit) return "stretchx";
+    if (Math.hypot(lx - g.stretchY[0], ly - g.stretchY[1]) <= hit) return "stretchy";
     return null;
   }
 
@@ -811,11 +840,21 @@ class MaskEditor {
         ctx.save();
         ctx.translate(t.x, t.y);
         ctx.rotate(((t.rotation || 0) * Math.PI) / 180);
+        ctx.transform(1, 0, Math.tan(((t.skew || 0) * Math.PI) / 180), 1, 0, 0);
+        ctx.scale(t.scaleX || 1, t.scaleY || 1);
         ctx.font = this._textFont(t);
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         const lh = t.size * 1.25;
+        const blockH = lines.length * lh;
         const y0 = -((lines.length - 1) * lh) / 2;
+        let fill = t.color || "#000000";
+        if (t.gradient && t.color2) {
+          const g = ctx.createLinearGradient(0, -blockH / 2, 0, blockH / 2);
+          g.addColorStop(0, t.color || "#000000");
+          g.addColorStop(1, t.color2);
+          fill = g;
+        }
         for (let li = 0; li < lines.length; li++) {
           if (t.stroke > 0) {
             ctx.strokeStyle = t.strokeColor || "#ffffff";
@@ -823,7 +862,7 @@ class MaskEditor {
             ctx.lineJoin = "round";
             ctx.strokeText(lines[li], 0, y0 + li * lh);
           }
-          ctx.fillStyle = t.color || "#000000";
+          ctx.fillStyle = fill;
           ctx.fillText(lines[li], 0, y0 + li * lh);
         }
         if (i === this.selectedText && this.tool === "text") {
@@ -844,6 +883,16 @@ class MaskEditor {
           ctx.stroke();
           ctx.fillRect(g.resize[0] - g.r, g.resize[1] - g.r, g.r * 2, g.r * 2);
           ctx.strokeRect(g.resize[0] - g.r, g.resize[1] - g.r, g.r * 2, g.r * 2);
+          for (const [hx, hy] of [g.stretchX, g.stretchY]) {
+            ctx.beginPath();
+            ctx.moveTo(hx, hy - g.r);
+            ctx.lineTo(hx + g.r, hy);
+            ctx.lineTo(hx, hy + g.r);
+            ctx.lineTo(hx - g.r, hy);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+          }
         }
         ctx.restore();
       }
