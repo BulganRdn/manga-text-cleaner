@@ -193,17 +193,21 @@ class MaskEditor {
   }
 
   async undo() {
+    if (this._pointer) return;
     const entry = this.undoStack.pop();
     if (!entry) return;
     this.redoStack.push({ kind: entry.kind, data: this._snapshot(entry.kind) });
     await this._restore(entry);
+    this.cb.onHistoryChange?.();
   }
 
   async redo() {
+    if (this._pointer) return;
     const entry = this.redoStack.pop();
     if (!entry) return;
     this.undoStack.push({ kind: entry.kind, data: this._snapshot(entry.kind) });
     await this._restore(entry);
+    this.cb.onHistoryChange?.();
   }
 
   _resize() {
@@ -440,22 +444,27 @@ class MaskEditor {
     this.canvas.classList.remove("panning");
 
     if (tool === "rect" && this._rectStart && this._rectEnd) {
-      this.pushHistory("mask");
       const [x0, y0] = this._rectStart, [x1, y1] = this._rectEnd;
-      const erase = this._activeTool(e) === "eraser";
-      this.maskCtx.globalCompositeOperation = erase ? "destination-out" : "source-over";
-      this.maskCtx.fillStyle = "rgba(255,0,0,1)";
-      this.maskCtx.fillRect(Math.min(x0, x1), Math.min(y0, y1),
-                            Math.abs(x1 - x0), Math.abs(y1 - y0));
-      this.maskCtx.globalCompositeOperation = "source-over";
-      this.cb.onDirty?.("mask");
+      if (Math.abs(x1 - x0) > 0.5 || Math.abs(y1 - y0) > 0.5) {
+        this.pushHistory("mask");
+        const erase = this._activeTool(e) === "eraser";
+        this.maskCtx.globalCompositeOperation = erase ? "destination-out" : "source-over";
+        this.maskCtx.fillStyle = "rgba(255,0,0,1)";
+        this.maskCtx.fillRect(Math.min(x0, x1), Math.min(y0, y1),
+                              Math.abs(x1 - x0), Math.abs(y1 - y0));
+        this.maskCtx.globalCompositeOperation = "source-over";
+        this.cb.onDirty?.("mask");
+      }
     }
     if (tool === "brush" || tool === "eraser") this.cb.onDirty?.("mask");
     if (tool === "draw" || tool === "restore") this.cb.onDirty?.("result");
     if (tool === "heal") {
       const maskData = this._alphaToBW(this.healCanvas);
       this.healCtx.clearRect(0, 0, this.healCanvas.width, this.healCanvas.height);
-      if (maskData) this.cb.onHealStroke?.(maskData);
+      if (maskData) {
+        this.pushHistory("result");
+        this.cb.onHealStroke?.(maskData);
+      }
     }
     this._cloneStrokeOffset = null;
     this._cloneSnap = null;

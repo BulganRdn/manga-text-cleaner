@@ -96,6 +96,27 @@ const errToast = (e) => {
 
 let editor;
 
+let textEditPushed = false;
+
+function resetTextEditHistory() { textEditPushed = false; }
+
+function ensureTextHistory() {
+  if (!textEditPushed) {
+    editor.pushHistory("texts");
+    textEditPushed = true;
+  }
+}
+
+function undoEdit() {
+  resetTextEditHistory();
+  editor.undo();
+}
+
+function redoEdit() {
+  resetTextEditHistory();
+  editor.redo();
+}
+
 function initEditor() {
   editor = new MaskEditor($("#editor-canvas"), {
     onView: (v) => { $("#sb-zoom").textContent = Math.round(v.scale * 100) + "%"; },
@@ -103,6 +124,7 @@ function initEditor() {
     onHealStroke: healStroke,
     onTextSelect: onTextSelect,
     onTextChange: syncTextPanel,
+    onHistoryChange: () => { syncTextPanel(); resetTextEditHistory(); },
     onTextCreate: (x, y) => {
       editor.addText({ x, y, text: t("text_placeholder"), ...textDefaults });
       openTextPanel();
@@ -420,6 +442,7 @@ async function cleanPage() {
     toast(t("loading_model"), "info", 6000);
   }
   try {
+    editor.pushHistory("result");
     const p = await api(`/pages/${i}/clean`, {
       method: "POST", body: JSON.stringify({ settings: apiSettings(), mask }),
     });
@@ -473,6 +496,7 @@ function openTextPanel() { $("#text-panel").classList.add("open"); syncTextPanel
 function closeTextPanel() { $("#text-panel").classList.remove("open"); }
 
 function onTextSelect(index) {
+  resetTextEditHistory();
   if (index === null) { closeTextPanel(); return; }
   openTextPanel();
 }
@@ -494,6 +518,7 @@ function applyTextPanel(field, value) {
   Object.assign(textDefaults, { [field]: value });
   saveTextDefaults();
   if (editor.selectedText === null) return;
+  ensureTextHistory();
   const item = editor.texts[editor.selectedText];
   item[field] = value;
   state.dirty.texts = true;
@@ -537,8 +562,8 @@ function setTool(tool) {
 function bindUI() {
   $$("#toolbar .tool[data-tool]").forEach((b) =>
     b.addEventListener("click", () => setTool(b.dataset.tool)));
-  $("#btn-undo").addEventListener("click", () => editor.undo());
-  $("#btn-redo").addEventListener("click", () => editor.redo());
+  $("#btn-undo").addEventListener("click", () => undoEdit());
+  $("#btn-redo").addEventListener("click", () => redoEdit());
   $("#btn-detect").addEventListener("click", detectPage);
   $("#btn-clean").addEventListener("click", cleanPage);
   $("#btn-revert").addEventListener("click", revertPage);
@@ -666,6 +691,7 @@ function bindUI() {
 
   $("#text-content").addEventListener("input", (e) => {
     if (editor.selectedText === null) return;
+    ensureTextHistory();
     editor.texts[editor.selectedText].text = e.target.value;
     state.dirty.texts = true;
     editor.render();
@@ -678,6 +704,7 @@ function bindUI() {
   $("#text-bold").addEventListener("change", (e) => applyTextPanel("bold", e.target.checked));
   $("#text-rotation").addEventListener("change", (e) => {
     if (editor.selectedText === null) return;
+    ensureTextHistory();
     editor.texts[editor.selectedText].rotation =
       Math.max(-180, Math.min(180, +e.target.value || 0));
     state.dirty.texts = true;
@@ -702,6 +729,13 @@ function bindUI() {
   plist.addEventListener("drop", (e) => addPages(e.dataTransfer.files));
 
   window.addEventListener("keydown", (e) => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y")) {
+      e.preventDefault();
+      if (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey)) redoEdit();
+      else undoEdit();
+      return;
+    }
     if (e.target instanceof Element && e.target.matches("input, select, textarea")) return;
     if (anyModalOpen()) {
       if (e.key === "Escape") $$(".modal-backdrop.open").forEach((m) => m.classList.remove("open"));
@@ -714,9 +748,7 @@ function bindUI() {
       return;
     }
     if (e.code === "Space") { editor.setSpacePan(true); e.preventDefault(); return; }
-    if (e.ctrlKey && e.key.toLowerCase() === "z") { e.preventDefault(); editor.undo(); return; }
-    if (e.ctrlKey && e.key.toLowerCase() === "y") { e.preventDefault(); editor.redo(); return; }
-    if (e.ctrlKey) return;
+    if (e.ctrlKey || e.metaKey) return;
 
     if (e.key === "ArrowRight" || e.key === ".") {
       if (!editor.isBusy) { e.preventDefault(); navPage(1); }
