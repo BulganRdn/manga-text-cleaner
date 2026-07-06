@@ -70,8 +70,15 @@ def active_backends(device: str = "auto") -> dict:
 
 
 def get_meta() -> dict:
+    cuda_available = False
+    try:
+        import torch
+        cuda_available = torch.cuda.is_available()
+    except ImportError:
+        pass
     return {
         "device": pick_device("auto"),
+        "cuda_available": cuda_available,
         "lama": lama_available(),
         "ctd": comictextdetector_available(),
     }

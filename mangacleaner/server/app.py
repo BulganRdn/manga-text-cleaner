@@ -34,6 +34,7 @@ class Settings(BaseModel):
     detect: str = "both"
     detector: str = "auto"
     model: str = "lama"
+    device: str = "auto"
     dilate: int = 6
     feather: int = 3
 
@@ -239,7 +240,8 @@ def page_detect(index: int, body: CleanBody):
     page = _page_or_404(index)
     img = load_image(page.src)
     s = body.settings
-    mask = detect_mask(img, detect=s.detect, detector=s.detector, dilate=s.dilate)
+    mask = detect_mask(img, detect=s.detect, detector=s.detector, dilate=s.dilate,
+                       device=s.device)
     n = cv2.connectedComponents((mask > 0).astype(np.uint8))[0] - 1
     ok, buf = cv2.imencode(".png", mask)
     return {"mask": "data:image/png;base64," + base64.b64encode(buf).decode(),
@@ -272,12 +274,12 @@ def page_set_result(index: int, body: ImageBody):
 
 
 @app.post("/api/pages/{index}/heal")
-def page_heal(index: int, body: MaskBody):
+def page_heal(index: int, body: CleanBody):
     _page_or_404(index)
     if not body.mask:
         raise HTTPException(400, "mask_required")
     mask = _decode_mask(body.mask)
-    return project.heal(index, mask).to_dict(index)
+    return project.heal(index, mask, body.settings.model_dump()).to_dict(index)
 
 
 @app.get("/api/pages/{index}/texts")

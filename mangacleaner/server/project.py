@@ -15,7 +15,6 @@ import cv2
 import numpy as np
 
 from ..core import SUPPORTED_EXTS, load_image, save_image
-from ..core.inpainting import OpenCVInpainter, inpaint_regions
 from ..core.pipeline import clean_page, detect_mask
 from ..core.typeset import render_texts
 
@@ -374,7 +373,8 @@ class Project:
         mask = detect_mask(img,
                            detect=settings.get("detect", "both"),
                            detector=settings.get("detector", "auto"),
-                           dilate=int(settings.get("dilate", 6)))
+                           dilate=int(settings.get("dilate", 6)),
+                           device=settings.get("device", "auto"))
         self._write_mask(page, mask, "auto")
         page.error = None
 
@@ -420,14 +420,17 @@ class Project:
         self.save()
         return page
 
-    def heal(self, index: int, mask: np.ndarray) -> Page:
+    def heal(self, index: int, mask: np.ndarray, settings: dict | None = None) -> Page:
         page = self.pages[index]
+        settings = settings or {}
         img = self.current_canvas(page)
         if mask.shape != img.shape[:2]:
             mask = cv2.resize(mask, (img.shape[1], img.shape[0]),
                               interpolation=cv2.INTER_NEAREST)
-        healed = inpaint_regions(OpenCVInpainter(), img, mask,
-                                 margin=32, min_size=64)
+        healed = clean_page(img, mask,
+                            model=settings.get("model", "lama"),
+                            feather=0,
+                            device=settings.get("device", "auto"))
         save_image(healed, self._result_path(page))
         page.result = self._result_path(page)
         page.status = ST_EDITED
@@ -444,7 +447,8 @@ class Project:
             mask = detect_mask(img,
                                detect=settings.get("detect", "both"),
                                detector=settings.get("detector", "auto"),
-                               dilate=int(settings.get("dilate", 6)))
+                               dilate=int(settings.get("dilate", 6)),
+                               device=settings.get("device", "auto"))
             self._write_mask(page, mask, "auto")
         elif mask.shape != img.shape[:2]:
             mask = cv2.resize(mask, (img.shape[1], img.shape[0]),
@@ -457,7 +461,8 @@ class Project:
         else:
             result = clean_page(img, mask,
                                 model=settings.get("model", "lama"),
-                                feather=int(settings.get("feather", 3)))
+                                feather=int(settings.get("feather", 3)),
+                                device=settings.get("device", "auto"))
         save_image(result, self._result_path(page))
         page.result = self._result_path(page)
         page.error = None

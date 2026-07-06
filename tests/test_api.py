@@ -60,6 +60,7 @@ def main() -> None:
 def run_tests(chapter: Path) -> None:
     r = client.get("/api/meta")
     assert r.status_code == 200 and "device" in r.json(), r.text
+    assert "cuda_available" in r.json(), r.text
     assert "Manga Cleaner Studio" in client.get("/").text
     print("meta + index:", r.json())
 

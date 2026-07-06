@@ -263,6 +263,15 @@
       </div>
     </div>
     <div class="field">
+      <label data-i18n="set_device">Compute device</label>
+      <select id="set-device">
+        <option value="auto" data-i18n="device_auto">Auto (GPU if available)</option>
+        <option value="cuda" data-i18n="device_cuda">GPU (CUDA)</option>
+        <option value="cpu" data-i18n="device_cpu">CPU</option>
+      </select>
+      <div class="field-hint" id="device-hint"></div>
+    </div>
+    <div class="field">
       <label><span data-i18n="set_dilate">Mask expansion</span> (px)</label>
       <div class="range-field">
         <input type="range" id="set-dilate" min="0" max="20" value="6">

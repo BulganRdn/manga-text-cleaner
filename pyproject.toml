@@ -21,7 +21,7 @@ classifiers = [
 dependencies = [
     "numpy>=1.24",
     "opencv-python>=4.8",
-    "Pillow>=10.0",
+    "Pillow>=11.3.0",
     "tqdm>=4.65",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-lama = ["torch>=2.0", "simple-lama-inpainting>=0.1.2"]
+lama = ["torch>=2.0"]  # then: pip install simple-lama-inpainting --no-deps
 detect = ["onnxruntime>=1.16"]
 desktop = ["pywebview>=5.0"]
 

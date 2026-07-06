@@ -24,7 +24,11 @@ More before/after pairs: [`sample_1`](examples/sample_1.jpg) →
 
 ## Quick start
 
+**Python 3.10–3.13** is recommended. **Python 3.14** works with the core app but
+needs **Pillow 11.3+** (prebuilt wheels); upgrade pip first.
+
 ```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 python run.py                       # browser app: opens http://127.0.0.1:8420
 ```
@@ -39,7 +43,8 @@ python desktop.py
 For **best inpainting quality**, add LaMa (strongly recommended):
 
 ```bash
-pip install torch simple-lama-inpainting
+pip install torch
+pip install simple-lama-inpainting --no-deps   # its Pillow pin is outdated; use project Pillow
 # GPU build of torch (optional): pip install torch --index-url https://download.pytorch.org/whl/cu121
 ```
 

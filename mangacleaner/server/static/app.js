@@ -15,7 +15,8 @@ const state = {
 };
 
 const settings = Object.assign(
-  { detect: "both", detector: "auto", model: "lama", dilate: 6, feather: 3, force: false },
+  { detect: "both", detector: "auto", model: "lama", device: "auto",
+    dilate: 6, feather: 3, force: false },
   JSON.parse(localStorage.getItem("mc_settings") || "{}"));
 
 const textDefaults = Object.assign(
@@ -41,8 +42,41 @@ async function api(path, opts = {}) {
 
 const apiSettings = () => ({
   detect: settings.detect, detector: settings.detector,
-  model: settings.model, dilate: +settings.dilate, feather: +settings.feather,
+  model: settings.model, device: settings.device,
+  dilate: +settings.dilate, feather: +settings.feather,
 });
+
+function effectiveDevice() {
+  if (settings.device === "cuda") return "cuda";
+  if (settings.device === "cpu") return "cpu";
+  return state.meta.cuda_available ? "cuda" : "cpu";
+}
+
+function updateBackendLabel() {
+  const dev = effectiveDevice().toUpperCase();
+  const inp = settings.model === "lama" && state.meta.lama ? "LaMa" : "OpenCV";
+  const det = state.meta.ctd ? "CTD" : "heuristic";
+  $("#sb-backend").textContent = `${dev} · ${inp} / ${det}`;
+}
+
+function syncDeviceControls() {
+  const sel = $("#set-device");
+  const cudaOpt = sel.querySelector('option[value="cuda"]');
+  const cudaOk = !!state.meta.cuda_available;
+  cudaOpt.disabled = !cudaOk;
+  if (!["auto", "cpu", "cuda"].includes(settings.device)) {
+    settings.device = "auto";
+    saveSettings();
+  }
+  if (settings.device === "cuda" && !cudaOk) {
+    settings.device = "auto";
+    saveSettings();
+  }
+  sel.value = settings.device;
+  const hint = $("#device-hint");
+  hint.textContent = cudaOk ? t("device_hint") : t("device_no_cuda");
+  hint.classList.toggle("warn", !cudaOk);
+}
 
 function toast(msg, kind = "info", ms = 4200) {
   const el = document.createElement("div");
@@ -404,7 +438,8 @@ async function healStroke(maskData) {
   try {
     await saveCurrentPageState();
     const p = await api(`/pages/${i}/heal`, {
-      method: "POST", body: JSON.stringify({ mask: maskData }) });
+      method: "POST", body: JSON.stringify({ settings: apiSettings(), mask: maskData }),
+    });
     patchPages([p]);
     await refreshCurrentResult();
   } catch (e) { errToast(e); }
@@ -525,12 +560,16 @@ function bindUI() {
   $("#btn-export").addEventListener("click", () => {
     openModal("#modal-export");
   });
-  $("#btn-settings").addEventListener("click", () => openModal("#modal-settings"));
+  $("#btn-settings").addEventListener("click", () => {
+    syncDeviceControls();
+    openModal("#modal-settings");
+  });
   $("#job-cancel").addEventListener("click", () => api("/job/cancel", { method: "POST" }));
   $("#lang-select").value = LANG;
   $("#lang-select").addEventListener("change", (e) => {
     setLang(e.target.value);
     renderSidebar();
+    syncDeviceControls();
     $("#sb-hint").textContent = t("shortcut_hint");
   });
 
@@ -579,6 +618,7 @@ function bindUI() {
   $("#set-detect").value = s.detect;
   $("#set-detector").value = s.detector;
   $("#set-model").value = s.model;
+  syncDeviceControls();
   $("#set-dilate").value = s.dilate;
   $("#set-dilate-val").textContent = s.dilate;
   $("#set-feather").value = s.feather;
@@ -586,7 +626,12 @@ function bindUI() {
   $("#set-force").checked = s.force;
   $("#set-detect").addEventListener("change", (e) => { s.detect = e.target.value; saveSettings(); });
   $("#set-detector").addEventListener("change", (e) => { s.detector = e.target.value; saveSettings(); });
-  $("#set-model").addEventListener("change", (e) => { s.model = e.target.value; saveSettings(); });
+  $("#set-model").addEventListener("change", (e) => {
+    s.model = e.target.value; saveSettings(); updateBackendLabel();
+  });
+  $("#set-device").addEventListener("change", (e) => {
+    s.device = e.target.value; saveSettings(); updateBackendLabel();
+  });
   $("#set-dilate").addEventListener("input", (e) => {
     s.dilate = +e.target.value; $("#set-dilate-val").textContent = e.target.value; saveSettings();
   });
@@ -710,10 +755,8 @@ async function boot() {
 
   try {
     state.meta = await api("/meta");
-    $("#sb-backend").textContent =
-      `${state.meta.device.toUpperCase()} · ` +
-      `${state.meta.lama ? "LaMa" : "OpenCV"} / ` +
-      `${state.meta.ctd ? "CTD" : "heuristic"}`;
+    syncDeviceControls();
+    updateBackendLabel();
     if (!state.meta.lama) $("#lama-note").classList.add("show");
     if (!state.meta.ctd) $("#detector-note").classList.add("show");
   } catch {}
