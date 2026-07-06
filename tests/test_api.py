@@ -163,6 +163,28 @@ def run_tests(chapter: Path) -> None:
     assert r.json()["status"] == "skipped"
     print("revert: OK")
 
+    prev = client.get("/api/pages/0/result").content
+    inc_mask = np.zeros(im.shape[:2], np.uint8)
+    inc_mask[700:760, 100:300] = 255
+    r = client.post("/api/pages/0/clean",
+                    json={"settings": OPENCV, "mask": data_url_of(inc_mask),
+                          "incremental": True})
+    assert r.status_code == 200 and r.json()["status"] == "edited", r.text
+    cur = client.get("/api/pages/0/result").content
+    a = cv2.imdecode(np.frombuffer(prev, np.uint8), cv2.IMREAD_COLOR)
+    b = cv2.imdecode(np.frombuffer(cur, np.uint8), cv2.IMREAD_COLOR)
+    diff = cv2.absdiff(a, b)
+    assert diff[700:760, 100:300].max() > 0, "incremental region unchanged"
+    outside = diff.copy()
+    outside[685:775, 85:315] = 0
+    assert outside.max() == 0, \
+        "incremental clean touched pixels outside the newly masked area"
+    m = cv2.imdecode(np.frombuffer(client.get("/api/pages/0/mask").content,
+                                   np.uint8), cv2.IMREAD_GRAYSCALE)
+    assert (m[710:750, 120:280] > 127).all(), "new mask not stored"
+    assert (m[580:640, 250:550] > 127).all(), "old mask lost from the union"
+    print("incremental re-clean on top of the result: OK")
+
     ok, buf = cv2.imencode(".png", np.full((400, 300, 3), 255, np.uint8))
     r = client.post("/api/project/pages/upload",
                     files=[("files", ("page5.png", buf.tobytes(), "image/png"))])

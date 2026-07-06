@@ -62,13 +62,6 @@ def clean_page(img_bgr: np.ndarray, mask: np.ndarray, *, model: str = "lama",
     return feather_blend(img_bgr, result, mask, feather)
 
 
-def active_backends(device: str = "auto") -> dict:
-    device = pick_device(device)
-    det = _get_detector("auto", device)
-    inp = _get_inpainter("lama", device)
-    return {"detector": det.name, "inpainter": getattr(inp, "backend", None) or inp.name}
-
-
 def get_meta() -> dict:
     cuda_available = False
     try:

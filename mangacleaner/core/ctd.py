@@ -115,6 +115,7 @@ class CTDModel:
                 providers.insert(0, "CUDAExecutionProvider")
             opts = ort.SessionOptions()
             opts.add_session_config_entry("session.set_denormal_as_zero", "1")
+            opts.intra_op_num_threads = min(8, os.cpu_count() or 8)
             try:
                 self._session = ort.InferenceSession(str(weights), opts,
                                                      providers=providers)

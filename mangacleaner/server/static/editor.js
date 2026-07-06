@@ -17,6 +17,8 @@ class MaskEditor {
     this.maskCtx = this.maskCanvas.getContext("2d");
     this.healCanvas = document.createElement("canvas");
     this.healCtx = this.healCanvas.getContext("2d");
+    this.cleanedCanvas = document.createElement("canvas");
+    this.cleanedCtx = this.cleanedCanvas.getContext("2d");
 
     this.texts = [];
     this.selectedText = null;
@@ -45,6 +47,9 @@ class MaskEditor {
     this._polyErase = false;
     this._cloneStrokeOffset = null;
     this._cloneSnap = null;
+    this.maskSelection = null;
+    this._maskClip = null;
+    this._maskFloat = false;
 
     this._bind();
     this._resize();
@@ -56,7 +61,8 @@ class MaskEditor {
   async setPage(originalUrl, resultUrl, maskUrl, texts = []) {
     this.original = await this._load(originalUrl);
     const w = this.original.naturalWidth, h = this.original.naturalHeight;
-    for (const c of [this.resultCanvas, this.maskCanvas, this.healCanvas]) {
+    for (const c of [this.resultCanvas, this.maskCanvas, this.healCanvas,
+                     this.cleanedCanvas]) {
       c.width = w; c.height = h;
     }
     this.hasResult = false;
@@ -74,6 +80,9 @@ class MaskEditor {
       const m = await this._load(maskUrl).catch(() => null);
       if (m) this._stampMaskImage(m);
     }
+    if (this.hasResult) this.markMaskCleaned();
+    this.maskSelection = null;
+    this._maskFloat = false;
     this.texts = Array.isArray(texts) ? texts : [];
     this.selectedText = null;
     this.cloneSource = null;
@@ -161,6 +170,86 @@ class MaskEditor {
 
   exportMask() { return this._alphaToBW(this.maskCanvas); }
   exportResult() { return this.resultCanvas.width ? this.resultCanvas.toDataURL("image/png") : null; }
+
+  markMaskCleaned() {
+    const c = this.cleanedCanvas;
+    this.cleanedCtx.clearRect(0, 0, c.width, c.height);
+    this.cleanedCtx.drawImage(this.maskCanvas, 0, 0);
+  }
+
+  exportNewMask() {
+    const w = this.maskCanvas.width, h = this.maskCanvas.height;
+    if (!w) return null;
+    const cur = this.maskCtx.getImageData(0, 0, w, h).data;
+    const old = this.cleanedCtx.getImageData(0, 0, w, h).data;
+    const layer = document.createElement("canvas");
+    layer.width = w; layer.height = h;
+    const lctx = layer.getContext("2d");
+    const od = lctx.createImageData(w, h);
+    let any = false;
+    for (let i = 3; i < cur.length; i += 4) {
+      if (cur[i] > 127 && old[i] <= 127) {
+        od.data[i - 3] = 255;
+        od.data[i - 2] = 255;
+        od.data[i - 1] = 255;
+        od.data[i] = 255;
+        any = true;
+      }
+    }
+    if (!any) return null;
+    lctx.putImageData(od, 0, 0);
+    const exp = document.createElement("canvas");
+    exp.width = w; exp.height = h;
+    const ectx = exp.getContext("2d");
+    ectx.fillStyle = "#000";
+    ectx.fillRect(0, 0, w, h);
+    ectx.drawImage(layer, 0, 0);
+    return exp.toDataURL("image/png");
+  }
+
+  copyMaskSelection() {
+    const s = this.maskSelection;
+    if (!s) return false;
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(s.w));
+    c.height = Math.max(1, Math.round(s.h));
+    c.getContext("2d").drawImage(this.maskCanvas, s.x, s.y, s.w, s.h,
+                                 0, 0, c.width, c.height);
+    this._maskClip = { canvas: c, w: c.width, h: c.height };
+    return true;
+  }
+
+  startMaskPaste() {
+    if (!this._maskClip || !this.original) return false;
+    if (!MASK_TOOLS.has(this.tool)) this.cb.onRequestTool?.("brush");
+    this._maskFloat = true;
+    this.render();
+    return true;
+  }
+
+  cancelMaskPaste() {
+    if (!this._maskFloat) return false;
+    this._maskFloat = false;
+    this.render();
+    return true;
+  }
+
+  clearMaskSelection() {
+    if (!this.maskSelection) return false;
+    this.maskSelection = null;
+    this.render();
+    return true;
+  }
+
+  eraseMaskSelection() {
+    const s = this.maskSelection;
+    if (!s) return;
+    this.pushHistory("mask");
+    this.maskCtx.clearRect(s.x, s.y, s.w, s.h);
+    this.maskSelection = null;
+    this.cb.onDirty?.("mask");
+    this.render();
+  }
 
   _snapshot(kind) {
     if (kind === "mask") return this.maskCanvas.toDataURL("image/png");
@@ -305,6 +394,28 @@ class MaskEditor {
     if (!this.original) return;
     this.canvas.setPointerCapture(e.pointerId);
     const p = this._pos(e);
+
+    if (this._maskFloat && this._maskClip && MASK_TOOLS.has(this.tool)) {
+      if (e.button === 2) {
+        this._maskFloat = false;
+        this.render();
+        return;
+      }
+      const [ix, iy] = this.toImage(p.x, p.y);
+      this.pushHistory("mask");
+      this.maskCtx.drawImage(this._maskClip.canvas,
+                             Math.round(ix - this._maskClip.w / 2),
+                             Math.round(iy - this._maskClip.h / 2));
+      this.cb.onDirty?.("mask");
+      this.render();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && MASK_TOOLS.has(this.tool)) {
+      const [ix, iy] = this.toImage(p.x, p.y);
+      this.maskSelection = this.regionAt(ix, iy);
+      this.render();
+      return;
+    }
 
     if (e.altKey && this.tool === "draw") {
       const [ix, iy] = this.toImage(p.x, p.y);
@@ -572,6 +683,10 @@ class MaskEditor {
     this.tool = tool;
     this._polyPoints = [];
     this.canvas.style.cursor = "";
+    if (!MASK_TOOLS.has(tool)) {
+      this.maskSelection = null;
+      this._maskFloat = false;
+    }
     if (tool !== "text") { this.selectedText = null; this.cb.onTextSelect?.(null); }
     this.canvas.classList.toggle("tool-pan", tool === "pan");
     this.canvas.classList.toggle("tool-poly", tool === "poly");
@@ -933,6 +1048,27 @@ class MaskEditor {
         ctx.fillStyle = i === 0 && near ? "#3fbf75" : "#fff";
         ctx.fill();
       }
+    }
+
+    if (this.maskSelection && MASK_TOOLS.has(this.tool) && !this._maskFloat) {
+      const s = this.maskSelection;
+      ctx.strokeStyle = "#ffb340";
+      ctx.lineWidth = 1.5 / v.scale;
+      ctx.setLineDash([5 / v.scale, 4 / v.scale]);
+      ctx.strokeRect(s.x, s.y, s.w, s.h);
+      ctx.setLineDash([]);
+    }
+    if (this._maskFloat && this._maskClip && this._cursorPos) {
+      const [fx, fy] = this.toImage(this._cursorPos.x, this._cursorPos.y);
+      const mx = fx - this._maskClip.w / 2, my = fy - this._maskClip.h / 2;
+      ctx.globalAlpha = 0.55;
+      ctx.drawImage(this._maskClip.canvas, mx, my);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = "#ffb340";
+      ctx.lineWidth = 1.5 / v.scale;
+      ctx.setLineDash([5 / v.scale, 4 / v.scale]);
+      ctx.strokeRect(mx, my, this._maskClip.w, this._maskClip.h);
+      ctx.setLineDash([]);
     }
     ctx.restore();
 

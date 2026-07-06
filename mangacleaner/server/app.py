@@ -51,6 +51,7 @@ class ProcessBody(BaseModel):
 class CleanBody(BaseModel):
     settings: Settings = Settings()
     mask: str | None = None
+    incremental: bool = False
 
 
 class MaskBody(BaseModel):
@@ -281,7 +282,8 @@ def page_clean(index: int, body: CleanBody):
     page = _page_or_404(index)
     mask = _decode_mask(body.mask) if body.mask else None
     try:
-        project.clean_single(index, body.settings.model_dump(), mask=mask)
+        project.clean_single(index, body.settings.model_dump(), mask=mask,
+                             incremental=body.incremental)
     except Exception as e:
         raise HTTPException(500, str(e))
     return page.to_dict(index)

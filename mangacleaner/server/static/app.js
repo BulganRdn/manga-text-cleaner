@@ -136,6 +136,7 @@ function initEditor() {
     onHealStroke: healStroke,
     onTextSelect: onTextSelect,
     onTextChange: syncTextPanel,
+    onRequestTool: setTool,
     onHistoryChange: () => { syncTextPanel(); resetTextEditHistory(); },
     onTextCreate: (x, y) => {
       const region = editor.regionAt(x, y);
@@ -467,7 +468,7 @@ async function detectPage() {
 async function cleanPage() {
   const i = state.current;
   if (i === null) return;
-  const mask = editor.exportMask();
+  let mask = editor.exportMask();
   if (!mask) { toast(t("mask_empty"), "warn"); return; }
   const btn = $("#btn-clean");
   btn.disabled = true;
@@ -475,15 +476,23 @@ async function cleanPage() {
     toast(t("loading_model"), "info", 6000);
   }
   try {
+    await saveCurrentPageState();
+    let incremental = false;
+    if (state.pages[i].hasResult) {
+      const diff = editor.exportNewMask();
+      if (diff) { mask = diff; incremental = true; }
+    }
     editor.pushHistory("result");
     const p = await api(`/pages/${i}/clean`, {
-      method: "POST", body: JSON.stringify({ settings: apiSettings(), mask }),
+      method: "POST",
+      body: JSON.stringify({ settings: apiSettings(), mask, incremental }),
     });
     patchPages([p]);
     state.dirty.mask = false;
     state.dirty.result = false;
+    editor.markMaskCleaned();
     await refreshCurrentResult();
-    toast(t("cleaned_ok"), "success");
+    toast(t(incremental ? "cleaned_inc" : "cleaned_ok"), "success");
   } catch (e) { errToast(e); }
   finally { btn.disabled = false; }
 }
@@ -956,13 +965,25 @@ function bindUI() {
       if (e.key === "Escape") $$(".modal-backdrop.open").forEach((m) => m.classList.remove("open"));
       return;
     }
-    if (e.key === "Escape") { editor.cancelPoly(); return; }
+    if (e.key === "Escape") {
+      if (!editor.cancelMaskPaste() && !editor.cancelPoly()) editor.clearMaskSelection();
+      return;
+    }
     if (e.key === "Backspace" && editor.tool === "poly") {
       e.preventDefault();
       editor.popPolyPoint();
       return;
     }
     if (e.code === "Space") { editor.setSpacePan(true); e.preventDefault(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && editor.maskSelection) {
+      e.preventDefault();
+      if (editor.copyMaskSelection()) toast(t("mask_copied"), "info", 2500);
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+      if (editor.startMaskPaste()) e.preventDefault();
+      return;
+    }
     if (e.ctrlKey || e.metaKey) return;
 
     if (e.key === "ArrowRight" || e.key === ".") {
@@ -973,6 +994,7 @@ function bindUI() {
       if (!editor.isBusy) { e.preventDefault(); navPage(-1); }
       return;
     }
+    if (e.key === "Delete" && editor.maskSelection) { editor.eraseMaskSelection(); return; }
     if (e.key === "Delete" && editor.tool === "text") { editor.deleteSelectedText(); return; }
     if (e.shiftKey && e.key.toLowerCase() === "r") { revertPage(); return; }
 

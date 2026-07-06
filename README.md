@@ -130,6 +130,14 @@ restored when you reopen it.
      (click corner points around an area, click the first point or press
      Enter to close; right-click starts an erasing polygon); red overlay
      with opacity control; right-click erases
+   * **Mask copy/paste** — `Ctrl+click` a detected region to select it,
+     `Ctrl+C` to copy, `Ctrl+V` then click to stamp it anywhere (repeats
+     until Esc; works across pages) — reuse the mask of a detected SFX on
+     a similar one the detector missed; `Del` erases the selected region
+   * **Re-clean missed text** — on an already-cleaned page, mark whatever
+     was missed and press `Enter`: only the newly marked areas are
+     re-inpainted on top of the existing result, keeping earlier
+     inpainting and manual repairs intact
    * **Paint `P`** — draw directly on the page; **Alt+click picks a color**
      from the artwork (eyedropper)
    * **Restore `O`** — brush the *original* pixels back wherever inpainting
@@ -161,6 +169,7 @@ restored when you reopen it.
 | `P` / `O` / `J` / `T` | paint / restore / heal / text | `M` | toggle mask |
 | `C` (hold) | compare with original | `Shift+R` | revert to original |
 | `Ctrl+Z` / `Ctrl+Y` | undo / redo | `[` / `]` | brush size |
+| `Ctrl+click` | select mask region | `Ctrl+C` / `Ctrl+V` | copy / stamp mask region |
 | `Alt+click` | eyedropper (paint tool) | `+` `−` `0` `1` | zoom / fit / 100% |
 
 ## CLI (automation / scripting)

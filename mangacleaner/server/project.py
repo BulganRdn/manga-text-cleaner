@@ -438,7 +438,32 @@ class Project:
         self.save()
         return page
 
-    def _run_one(self, page: Page, settings: dict, mask=None) -> None:
+    def _run_one(self, page: Page, settings: dict, mask=None,
+                 incremental: bool = False) -> None:
+        if incremental and mask is not None and page.result \
+                and page.result.is_file():
+            img = load_image(page.result)
+            if mask.shape != img.shape[:2]:
+                mask = cv2.resize(mask, (img.shape[1], img.shape[0]),
+                                  interpolation=cv2.INTER_NEAREST)
+            stored = self._stored_mask(page)
+            if stored is not None and stored.shape != mask.shape:
+                stored = cv2.resize(stored, (mask.shape[1], mask.shape[0]),
+                                    interpolation=cv2.INTER_NEAREST)
+            union = mask if stored is None else np.maximum(stored, mask)
+            self._write_mask(page, union, "user")
+            if mask.max() == 0:
+                return
+            result = clean_page(img, mask,
+                                model=settings.get("model", "lama"),
+                                feather=int(settings.get("feather", 3)),
+                                device=settings.get("device", "auto"))
+            save_image(result, self._result_path(page))
+            page.result = self._result_path(page)
+            page.error = None
+            page.version += 1
+            return
+
         img = load_image(page.src)
         explicit = mask is not None
         if not explicit:
@@ -468,12 +493,13 @@ class Project:
         page.error = None
         page.version += 1
 
-    def clean_single(self, index: int, settings: dict, mask=None) -> Page:
+    def clean_single(self, index: int, settings: dict, mask=None,
+                     incremental: bool = False) -> Page:
         page = self.pages[index]
         with self._mutate:
             page.status = ST_PROCESSING
         try:
-            self._run_one(page, settings, mask=mask)
+            self._run_one(page, settings, mask=mask, incremental=incremental)
             page.status = ST_EDITED if (mask is not None
                                         or page.mask_source == "user") else ST_DONE
         except Exception as e:
