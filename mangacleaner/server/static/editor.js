@@ -25,6 +25,8 @@ class MaskEditor {
     this.tool = "brush";
     this.brushSize = 26;
     this.brushColor = "#ffffff";
+    this.drawClone = false;
+    this.cloneSource = null;
     this.maskOpacity = 0.45;
     this.maskVisible = true;
     this.showOriginal = false;
@@ -41,6 +43,8 @@ class MaskEditor {
     this._textDrag = null;
     this._polyPoints = [];
     this._polyErase = false;
+    this._cloneStrokeOffset = null;
+    this._cloneSnap = null;
 
     this._bind();
     this._resize();
@@ -72,6 +76,9 @@ class MaskEditor {
     }
     this.texts = Array.isArray(texts) ? texts : [];
     this.selectedText = null;
+    this.cloneSource = null;
+    this._cloneStrokeOffset = null;
+    this._cloneSnap = null;
     this.undoStack = [];
     this.redoStack = [];
     this._polyPoints = [];
@@ -290,8 +297,13 @@ class MaskEditor {
     this.canvas.setPointerCapture(e.pointerId);
     const p = this._pos(e);
 
-    if (e.altKey && (this.tool === "draw")) {
+    if (e.altKey && this.tool === "draw") {
       const [ix, iy] = this.toImage(p.x, p.y);
+      if (this.drawClone) {
+        this.cloneSource = [ix, iy];
+        this.render();
+        return;
+      }
       const d = this.resultCtx.getImageData(Math.round(ix), Math.round(iy), 1, 1).data;
       const hex = "#" + [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, "0")).join("");
       this.brushColor = hex;
@@ -300,6 +312,9 @@ class MaskEditor {
     }
 
     const tool = this._activeTool(e);
+
+    if (tool === "draw" && this.drawClone && !this.cloneSource) return;
+
     this._pointer = { tool, last: p, moved: false };
 
     if (tool === "pan") { this.canvas.classList.add("panning"); return; }
@@ -347,7 +362,18 @@ class MaskEditor {
     }
 
     if (tool === "brush" || tool === "eraser") this.pushHistory("mask");
-    else if (tool === "draw" || tool === "restore") this.pushHistory("result");
+    else if (tool === "draw" || tool === "restore") {
+      if (tool === "draw" && this.drawClone) {
+        const [ix, iy] = this.toImage(p.x, p.y);
+        this._cloneStrokeOffset = [ix - this.cloneSource[0], iy - this.cloneSource[1]];
+        const w = this.resultCanvas.width, h = this.resultCanvas.height;
+        this._cloneSnap = document.createElement("canvas");
+        this._cloneSnap.width = w;
+        this._cloneSnap.height = h;
+        this._cloneSnap.getContext("2d").drawImage(this.resultCanvas, 0, 0);
+      }
+      this.pushHistory("result");
+    }
     this._paintSegment(p, p, tool);
   }
 
@@ -431,6 +457,8 @@ class MaskEditor {
       this.healCtx.clearRect(0, 0, this.healCanvas.width, this.healCanvas.height);
       if (maskData) this.cb.onHealStroke?.(maskData);
     }
+    this._cloneStrokeOffset = null;
+    this._cloneSnap = null;
     this._pointer = null;
     this._rectStart = this._rectEnd = null;
     this._textDrag = null;
@@ -448,9 +476,12 @@ class MaskEditor {
       this._strokeLine(ctx, x0, y0, x1, y1);
       ctx.globalCompositeOperation = "source-over";
     } else if (tool === "draw") {
-      const ctx = this.resultCtx;
-      ctx.strokeStyle = this.brushColor;
-      this._strokeLine(ctx, x0, y0, x1, y1);
+      if (this.drawClone) this._cloneStampSegment(x0, y0, x1, y1);
+      else {
+        const ctx = this.resultCtx;
+        ctx.strokeStyle = this.brushColor;
+        this._strokeLine(ctx, x0, y0, x1, y1);
+      }
     } else if (tool === "restore") {
       const ctx = this.resultCtx;
       const r = this.brushSize / 2;
@@ -470,6 +501,26 @@ class MaskEditor {
       this._strokeLine(ctx, x0, y0, x1, y1);
     }
     this.render();
+  }
+
+  _cloneStampSegment(x0, y0, x1, y1) {
+    if (!this._cloneSnap || !this._cloneStrokeOffset) return;
+    const [ox, oy] = this._cloneStrokeOffset;
+    const ctx = this.resultCtx;
+    const src = this._cloneSnap;
+    const r = this.brushSize / 2;
+    const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / (r / 2)));
+    for (let s = 0; s <= steps; s++) {
+      const x = x0 + (x1 - x0) * (s / steps);
+      const y = y0 + (y1 - y0) * (s / steps);
+      const sx = x - ox, sy = y - oy;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(src, sx - r, sy - r, r * 2, r * 2, x - r, y - r, r * 2, r * 2);
+      ctx.restore();
+    }
   }
 
   _strokeLine(ctx, x0, y0, x1, y1) {
@@ -723,7 +774,8 @@ class MaskEditor {
     }
     ctx.restore();
 
-    const strokeTools = { brush: "#ff5b5b", eraser: "#e8b339", draw: this.brushColor,
+    const strokeTools = { brush: "#ff5b5b", eraser: "#e8b339",
+                          draw: this.drawClone ? "#c97bff" : this.brushColor,
                           restore: "#3fbf75", heal: "#00dcaa" };
     if (this._cursorPos && strokeTools[this.tool] && !this._spacePan) {
       const r = (this.brushSize / 2) * v.scale;
@@ -731,6 +783,39 @@ class MaskEditor {
       ctx.lineWidth = 1.2;
       ctx.beginPath();
       ctx.arc(this._cursorPos.x, this._cursorPos.y, Math.max(r, 2), 0, Math.PI * 2);
+      ctx.stroke();
+      if (this.tool === "draw" && this.drawClone && this.cloneSource) {
+        const [sx, sy] = this.cloneSource;
+        const cx = v.tx + sx * v.scale, cy = v.ty + sy * v.scale;
+        const cross = 6;
+        ctx.strokeStyle = "#c97bff";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(cx - cross, cy); ctx.lineTo(cx + cross, cy);
+        ctx.moveTo(cx, cy - cross); ctx.lineTo(cx, cy + cross);
+        ctx.stroke();
+        if (this._cloneStrokeOffset) {
+          const [ox, oy] = this._cloneStrokeOffset;
+          const [ix, iy] = this.toImage(this._cursorPos.x, this._cursorPos.y);
+          const scx = v.tx + (ix - ox) * v.scale, scy = v.ty + (iy - oy) * v.scale;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.arc(scx, scy, Math.max(r, 2), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+    }
+
+    if (this.tool === "draw" && this.drawClone && this.cloneSource && !this._cursorPos) {
+      const [sx, sy] = this.cloneSource;
+      const cx = v.tx + sx * v.scale, cy = v.ty + sy * v.scale;
+      const cross = 6;
+      ctx.strokeStyle = "#c97bff";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx - cross, cy); ctx.lineTo(cx + cross, cy);
+      ctx.moveTo(cx, cy - cross); ctx.lineTo(cx, cy + cross);
       ctx.stroke();
     }
 

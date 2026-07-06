@@ -507,11 +507,30 @@ function openModal(sel) {
 function closeModal(sel) { $(sel).classList.remove("open"); }
 const anyModalOpen = () => !!$(".modal-backdrop.open");
 
+function setDrawMode(clone) {
+  editor.drawClone = clone;
+  $$(".mode-btn[data-draw-mode]").forEach((b) =>
+    b.classList.toggle("active", (b.dataset.drawMode === "clone") === clone));
+  updateDrawOptions();
+  editor.render();
+}
+
+function updateDrawOptions() {
+  const tool = editor.tool;
+  const draw = tool === "draw";
+  const mask = tool === "brush" || tool === "eraser" || tool === "rect" || tool === "poly";
+  $("#paint-options").style.display = draw ? "flex" : "none";
+  $("#mask-opacity-wrap").style.display = mask ? "flex" : "none";
+  $("#draw-color-wrap").style.display = draw && !editor.drawClone ? "flex" : "none";
+  $("#clone-hint").style.display = draw && editor.drawClone ? "inline" : "none";
+  $("#draw-hint").textContent = t("eyedropper_hint");
+}
+
 function setTool(tool) {
   editor.setTool(tool);
   $$("#toolbar .tool[data-tool]").forEach((b) =>
     b.classList.toggle("active", b.dataset.tool === tool));
-  $("#draw-color-wrap").style.display = tool === "draw" ? "flex" : "none";
+  updateDrawOptions();
   if (tool !== "text") closeTextPanel();
 }
 
@@ -553,6 +572,8 @@ function bindUI() {
     editor.render();
   });
   $("#draw-color").addEventListener("input", (e) => { editor.brushColor = e.target.value; });
+  $$(".mode-btn[data-draw-mode]").forEach((b) =>
+    b.addEventListener("click", () => setDrawMode(b.dataset.drawMode === "clone")));
 
   $("#btn-open").addEventListener("click", () => openModal("#modal-open"));
   $("#btn-detect-all").addEventListener("click", detectAll);
@@ -570,6 +591,7 @@ function bindUI() {
     setLang(e.target.value);
     renderSidebar();
     syncDeviceControls();
+    updateDrawOptions();
     $("#sb-hint").textContent = t("shortcut_hint");
   });
 
