@@ -75,7 +75,8 @@ def main() -> None:
     window = webview.create_window(
         "Manga Cleaner Studio", url,
         width=1440, height=900, min_size=(1000, 640),
-        background_color="#131519", js_api=api, confirm_close=True)
+        background_color="#131519", js_api=api, confirm_close=True,
+        zoomable=False)
     api._window = window
     webview.start()
 

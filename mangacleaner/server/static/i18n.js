@@ -125,7 +125,9 @@ const I18N = {
     loading_model: "Loading model… the first page can take a while.",
     no_page: "Open a project and select a page.",
     select_page: "Select a page from the right panel.",
-    shortcut_hint: "◀ ▶ pages · B brush · E eraser · R rect · L poly · P paint · O restore · J heal · T text · D detect · Enter clean · C compare · Shift+R revert · Ctrl+Z undo · [ ] or Ctrl−/+ brush size",
+    prev_page: "Previous page (←)",
+    next_page: "Next page (→)",
+    shortcut_hint: "◀ ▶ pages · B brush · E eraser · R rect · L poly · P paint · O restore · J heal · T text · D detect · Enter clean · C compare · Shift+R revert · Ctrl+Z undo · [ ] or Ctrl−/+ or Ctrl+scroll brush size",
     lang_name: "English",
   },
   mn: {
@@ -252,7 +254,9 @@ const I18N = {
     loading_model: "Model ачаалж байна… эхний хуудас удаж болно.",
     no_page: "Төсөл нээгээд хуудас сонгоно уу.",
     select_page: "Баруун самбараас хуудас сонгоно уу.",
-    shortcut_hint: "◀ ▶ хуудас · B бийр · E баллуур · R тэгш өнцөгт · L олон өнцөгт · P будах · O сэргээх · J нөхөх · T текст · D илрүүлэх · Enter цэвэрлэх · C харьцуулах · Shift+R буцаах · Ctrl+Z undo · [ ] эсвэл Ctrl−/+ бийрний хэмжээ",
+    prev_page: "Өмнөх хуудас (←)",
+    next_page: "Дараагийн хуудас (→)",
+    shortcut_hint: "◀ ▶ хуудас · B бийр · E баллуур · R тэгш өнцөгт · L олон өнцөгт · P будах · O сэргээх · J нөхөх · T текст · D илрүүлэх · Enter цэвэрлэх · C харьцуулах · Shift+R буцаах · Ctrl+Z undo · [ ] эсвэл Ctrl−/+ эсвэл Ctrl+scroll бийрний хэмжээ",
     lang_name: "Монгол",
   },
 };

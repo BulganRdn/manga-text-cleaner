@@ -123,6 +123,12 @@ function adjustBrushSize(delta) {
   el.dispatchEvent(new Event("input"));
 }
 
+function wheelBrushStep(e) {
+  const mag = Math.abs(e.deltaY);
+  if (mag < 0.5) return 0;
+  return Math.max(2, Math.min(12, Math.round(mag / 12) * 2 || 4));
+}
+
 function initEditor() {
   editor = new MaskEditor($("#editor-canvas"), {
     onView: (v) => { $("#sb-zoom").textContent = Math.round(v.scale * 100) + "%"; },
@@ -137,6 +143,13 @@ function initEditor() {
     },
     onColorPick: (hex) => { $("#draw-color").value = hex; },
   });
+}
+
+function updatePageNav() {
+  const has = state.pages.length > 0 && state.current !== null;
+  const i = state.current;
+  $("#btn-prev-page").disabled = !has || i <= 0;
+  $("#btn-next-page").disabled = !has || i >= state.pages.length - 1;
 }
 
 function renderSidebar() {
@@ -162,6 +175,7 @@ function renderSidebar() {
   $("#btn-add-pages").style.display = hasPages ? "" : "none";
   const sel = $(".page-item.selected");
   if (sel) sel.scrollIntoView({ block: "nearest" });
+  updatePageNav();
 }
 
 function patchPages(pages) {
@@ -570,6 +584,8 @@ function bindUI() {
     b.addEventListener("click", () => setTool(b.dataset.tool)));
   $("#btn-undo").addEventListener("click", () => undoEdit());
   $("#btn-redo").addEventListener("click", () => redoEdit());
+  $("#btn-prev-page").addEventListener("click", () => { if (!editor.isBusy) navPage(-1); });
+  $("#btn-next-page").addEventListener("click", () => { if (!editor.isBusy) navPage(1); });
   $("#btn-detect").addEventListener("click", detectPage);
   $("#btn-clean").addEventListener("click", cleanPage);
   $("#btn-revert").addEventListener("click", revertPage);
@@ -812,6 +828,16 @@ function bindUI() {
   });
 
   window.addEventListener("beforeunload", () => { saveCurrentPageState(); });
+
+  // Ctrl+scroll: resize brush (capture phase blocks browser/page zoom).
+  document.addEventListener("wheel", (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    if (!(e.target instanceof Element) || !e.target.closest("#canvas-wrap")) return;
+    if (e.target.closest(".modal-backdrop.open")) return;
+    e.preventDefault();
+    const step = wheelBrushStep(e);
+    if (step) adjustBrushSize(e.deltaY < 0 ? step : -step);
+  }, { passive: false, capture: true });
 }
 
 async function boot() {

@@ -257,17 +257,22 @@ class MaskEditor {
     return [(sx - v.tx) / v.scale, (sy - v.ty) / v.scale];
   }
 
+  _onWheel(e) {
+    if (e.ctrlKey || e.metaKey) return;
+    if (!this.original) return;
+    e.preventDefault();
+    const p = this._pos(e);
+    this.zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12, p.x, p.y);
+  }
+
   _bind() {
     const c = this.canvas;
+    const wrap = c.parentElement;
+    wrap.addEventListener("wheel", (e) => this._onWheel(e), { passive: false });
     c.addEventListener("pointerdown", (e) => this._down(e));
     c.addEventListener("pointermove", (e) => this._move(e));
     c.addEventListener("pointerup", (e) => this._up(e));
     c.addEventListener("pointerleave", () => { this._cursorPos = null; this.render(); });
-    c.addEventListener("wheel", (e) => {
-      e.preventDefault();
-      const p = this._pos(e);
-      this.zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12, p.x, p.y);
-    }, { passive: false });
     c.addEventListener("contextmenu", (e) => e.preventDefault());
     c.addEventListener("dblclick", (e) => {
       if (this.tool === "poly") {

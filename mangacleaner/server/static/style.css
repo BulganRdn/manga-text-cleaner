@@ -288,6 +288,17 @@ input[type="range"] { accent-color: var(--accent); width: 110px; }
   white-space: nowrap;
   overflow: hidden;
 }
+.page-nav { display: flex; align-items: center; gap: 6px; flex: none; min-width: 0; }
+#sb-page { overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.sb-nav-btn {
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid var(--border);
+  border-radius: 5px; cursor: pointer; color: var(--text-dim);
+  padding: 0; flex: none;
+}
+.sb-nav-btn:hover:not(:disabled) { background: var(--panel-2); color: var(--text); border-color: var(--text-dim); }
+.sb-nav-btn:disabled { opacity: .35; cursor: default; }
 #sb-hint { overflow: hidden; text-overflow: ellipsis; }
 
 .modal-backdrop {
