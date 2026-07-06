@@ -138,7 +138,19 @@ function initEditor() {
     onTextChange: syncTextPanel,
     onHistoryChange: () => { syncTextPanel(); resetTextEditHistory(); },
     onTextCreate: (x, y) => {
-      editor.addText({ x, y, text: t("text_placeholder"), ...textDefaults });
+      const region = editor.regionAt(x, y);
+      const item = { x, y, text: t("text_placeholder"), ...textDefaults };
+      delete item.region;
+      delete item.lines;
+      delete item.fit;
+      if (region) {
+        item.region = region;
+        item.fit = true;
+        item.x = region.x + region.w / 2;
+        item.y = region.y + region.h / 2;
+      }
+      editor.addText(item);
+      if (region) { editor.fitTextToRegion(item); editor.render(); }
       openTextPanel();
     },
     onColorPick: (hex) => { $("#draw-color").value = hex; },
@@ -647,6 +659,8 @@ function syncTextPanel() {
   $("#text-bold").checked = !!src.bold;
   $("#text-bold").disabled = !!src.fontPath;
   $("#text-rotation").value = Math.round(src.rotation || 0);
+  $("#text-fit").style.display = t0 && t0.region ? "" : "none";
+  $("#text-fit").classList.toggle("active", !!(t0 && t0.fit));
 }
 
 function applyTextPanel(field, value) {
@@ -829,11 +843,35 @@ function bindUI() {
   $("#text-content").addEventListener("input", (e) => {
     if (editor.selectedText === null) return;
     ensureTextHistory();
-    editor.texts[editor.selectedText].text = e.target.value;
+    const item = editor.texts[editor.selectedText];
+    item.text = e.target.value;
+    if (item.fit && item.region) {
+      editor.fitTextToRegion(item);
+      $("#text-size").value = item.size;
+    } else {
+      delete item.lines;
+    }
     state.dirty.texts = true;
     editor.render();
   });
-  $("#text-size").addEventListener("change", (e) => applyTextPanel("size", Math.max(6, +e.target.value || 24)));
+  $("#text-fit").addEventListener("click", () => {
+    if (editor.selectedText === null) return;
+    const item = editor.texts[editor.selectedText];
+    if (!item.region) return;
+    ensureTextHistory();
+    item.fit = true;
+    editor.fitTextToRegion(item);
+    state.dirty.texts = true;
+    editor.render();
+    syncTextPanel();
+  });
+  $("#text-size").addEventListener("change", (e) => {
+    if (editor.selectedText !== null) {
+      ensureTextHistory();
+      editor.texts[editor.selectedText].fit = false;
+    }
+    applyTextPanel("size", Math.max(6, +e.target.value || 24));
+  });
   $("#text-color").addEventListener("input", (e) => applyTextPanel("color", e.target.value));
   $("#text-stroke").addEventListener("change", (e) => applyTextPanel("stroke", Math.max(0, +e.target.value || 0)));
   $("#text-stroke-color").addEventListener("input", (e) => applyTextPanel("strokeColor", e.target.value));

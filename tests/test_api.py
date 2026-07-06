@@ -189,6 +189,15 @@ def run_tests(chapter: Path) -> None:
     assert len(ys) and ys.ptp() > xs.ptp(), "rotated text should render vertically"
     print("rotated typeset burn-in: OK")
 
+    canvas = np.full((300, 300, 3), 255, np.uint8)
+    out = render_texts(canvas, [{"x": 150, "y": 150, "size": 40, "color": "#000000",
+                                 "text": "IIIIIIIII", "lines": ["III", "III", "III"]}])
+    g = cv2.cvtColor(out, cv2.COLOR_BGR2GRAY)
+    ys, xs = np.where(g < 100)
+    assert len(ys) and ys.ptp() > xs.ptp(), \
+        "lines field should render as a wrapped tall block"
+    print("wrapped-lines typeset: OK")
+
     r = client.get("/api/fonts")
     assert r.status_code == 200, r.text
     fonts = r.json()["fonts"]

@@ -428,6 +428,7 @@ class MaskEditor {
         } else if (d.mode === "resize") {
           const dist = Math.hypot(ix - t.x, iy - t.y);
           t.size = Math.max(6, Math.min(300, Math.round(d.size0 * (dist / d.d0))));
+          t.fit = false;
         } else {
           t.x = ix - d.dx;
           t.y = iy - d.dy;
@@ -602,13 +603,110 @@ class MaskEditor {
     this.render();
   }
 
-  _textLines(t) { return String(t.text || "").split("\n"); }
+  _textLines(t) {
+    if (Array.isArray(t.lines) && t.lines.length) return t.lines.map(String);
+    return String(t.text || "").split("\n");
+  }
 
-  _textFont(t) {
-    if (t.fontFamily) return `${t.size}px "${t.fontFamily}"`;
+  _textFont(t, size = t.size) {
+    if (t.fontFamily) return `${size}px "${t.fontFamily}"`;
     const fam = { arial: "Arial", comic: '"Comic Sans MS"', verdana: "Verdana",
                   times: '"Times New Roman"', impact: "Impact", tahoma: "Tahoma" }[t.font] || "Arial";
-    return `${t.bold ? "bold " : ""}${t.size}px ${fam}`;
+    return `${t.bold ? "bold " : ""}${size}px ${fam}`;
+  }
+
+  regionAt(ix, iy) {
+    const mc = this.maskCanvas;
+    if (!mc.width) return null;
+    const S = 4;
+    const w = Math.max(1, Math.ceil(mc.width / S));
+    const h = Math.max(1, Math.ceil(mc.height / S));
+    const tmp = document.createElement("canvas");
+    tmp.width = w; tmp.height = h;
+    const tctx = tmp.getContext("2d");
+    tctx.drawImage(mc, 0, 0, w, h);
+    const data = tctx.getImageData(0, 0, w, h).data;
+    const on = (x, y) => x >= 0 && y >= 0 && x < w && y < h &&
+                         data[(y * w + x) * 4 + 3] > 16;
+
+    const sx = Math.round(ix / S), sy = Math.round(iy / S);
+    let seed = null;
+    outer:
+    for (let r = 0; r <= 8; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          if (on(sx + dx, sy + dy)) { seed = [sx + dx, sy + dy]; break outer; }
+        }
+      }
+    }
+    if (!seed) return null;
+
+    const R = 3;
+    const seen = new Uint8Array(w * h);
+    const qx = [seed[0]], qy = [seed[1]];
+    seen[seed[1] * w + seed[0]] = 1;
+    let minX = seed[0], maxX = seed[0], minY = seed[1], maxY = seed[1], count = 0;
+    while (qx.length && count < 80000) {
+      const x = qx.pop(), y = qy.pop();
+      count++;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      for (let dy = -R; dy <= R; dy++) {
+        for (let dx = -R; dx <= R; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const i = ny * w + nx;
+          if (seen[i] || !on(nx, ny)) continue;
+          seen[i] = 1;
+          qx.push(nx);
+          qy.push(ny);
+        }
+      }
+    }
+    const reg = { x: minX * S, y: minY * S,
+                  w: (maxX - minX + 1) * S, h: (maxY - minY + 1) * S };
+    if (count < 4 || reg.w * reg.h > 0.6 * mc.width * mc.height) return null;
+    return reg;
+  }
+
+  _wrapText(ctx, text, maxW) {
+    const words = text.split(/\s+/).filter(Boolean);
+    const lines = [];
+    let cur = "";
+    for (const wd of words) {
+      const cand = cur ? cur + " " + wd : wd;
+      if (cur && ctx.measureText(cand).width > maxW) { lines.push(cur); cur = wd; }
+      else cur = cand;
+    }
+    if (cur) lines.push(cur);
+    return lines.length ? lines : [text];
+  }
+
+  fitTextToRegion(item) {
+    const reg = item.region;
+    if (!reg) return;
+    const raw = String(item.text || "").replace(/\s*\n\s*/g, " ").trim();
+    if (!raw) { delete item.lines; return; }
+    const maxW = Math.max(20, reg.w * 0.92);
+    const maxH = Math.max(20, reg.h * 0.92);
+    const ctx = this.ctx;
+    ctx.save();
+    let size = Math.min(140, Math.max(8, Math.floor(maxH / 1.25)));
+    let lines = [raw];
+    for (; size > 8; size--) {
+      ctx.font = this._textFont(item, size);
+      lines = this._wrapText(ctx, raw, maxW);
+      const widest = Math.max(...lines.map((ln) => ctx.measureText(ln).width));
+      if (widest <= maxW && lines.length * size * 1.25 <= maxH) break;
+    }
+    ctx.restore();
+    item.size = size;
+    item.lines = lines;
+    item.x = reg.x + reg.w / 2;
+    item.y = reg.y + reg.h / 2;
   }
 
   _textBox(t) {

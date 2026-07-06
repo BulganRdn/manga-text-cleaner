@@ -54,7 +54,11 @@ def render_texts(img_bgr: np.ndarray, items: list[dict]) -> np.ndarray:
     pil = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(pil)
     for it in items:
-        text = str(it.get("text", "")).strip()
+        lines = it.get("lines")
+        if isinstance(lines, list) and lines:
+            text = "\n".join(str(ln) for ln in lines).strip()
+        else:
+            text = str(it.get("text", "")).strip()
         if not text:
             continue
         size = max(6, int(it.get("size", 24)))
