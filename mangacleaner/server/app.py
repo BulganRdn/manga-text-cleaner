@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import logging
 import tempfile
+import threading
 from pathlib import Path
 
 import cv2
@@ -13,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ..core import load_image
+from ..core.fonts import get_font_path, list_fonts
 from ..core.pipeline import detect_mask, get_meta
 from .. import __version__
 from .project import Project, sanitize_name
@@ -21,6 +23,7 @@ log = logging.getLogger("mangacleaner")
 
 app = FastAPI(title="Manga Text Cleaner Studio", version=__version__)
 project = Project()
+threading.Thread(target=list_fonts, daemon=True).start()
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -103,6 +106,24 @@ def _decode_mask(data_url: str) -> np.ndarray:
 @app.get("/api/meta")
 def meta():
     return {"version": __version__, **get_meta()}
+
+
+@app.get("/api/fonts")
+def fonts():
+    return {"fonts": list_fonts()}
+
+
+@app.post("/api/fonts/refresh")
+def fonts_refresh():
+    return {"fonts": list_fonts(refresh=True)}
+
+
+@app.get("/api/fonts/{font_id}/file")
+def font_file(font_id: int):
+    try:
+        return FileResponse(get_font_path(font_id))
+    except KeyError:
+        raise HTTPException(404, "font_not_found")
 
 
 @app.get("/api/projects")

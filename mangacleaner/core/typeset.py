@@ -20,19 +20,27 @@ FONT_FILES = {
 _font_cache: dict[tuple, ImageFont.FreeTypeFont] = {}
 
 
-def _get_font(family: str, size: int, bold: bool) -> ImageFont.FreeTypeFont:
-    key = (family, size, bold)
+def _get_font(family: str, size: int, bold: bool,
+              path: str | None = None) -> ImageFont.FreeTypeFont:
+    key = (path or family, size, bold)
     if key in _font_cache:
         return _font_cache[key]
-    regular, bold_file = FONT_FILES.get(family, FONT_FILES["arial"])
-    candidates = [bold_file, regular] if bold else [regular, bold_file]
     font = None
-    for name in candidates:
+    if path:
         try:
-            font = ImageFont.truetype(name, size)
-            break
+            font = ImageFont.truetype(path, size)
         except OSError:
-            continue
+            log.warning("font file %s not found — falling back to %s",
+                        path, family)
+    if font is None:
+        regular, bold_file = FONT_FILES.get(family, FONT_FILES["arial"])
+        candidates = [bold_file, regular] if bold else [regular, bold_file]
+        for name in candidates:
+            try:
+                font = ImageFont.truetype(name, size)
+                break
+            except OSError:
+                continue
     if font is None:
         log.warning("font %s not found — using PIL default", family)
         font = ImageFont.load_default()
@@ -50,8 +58,10 @@ def render_texts(img_bgr: np.ndarray, items: list[dict]) -> np.ndarray:
         if not text:
             continue
         size = max(6, int(it.get("size", 24)))
+        path = it.get("fontPath") or None
         font = _get_font(str(it.get("font", "arial")), size,
-                         bool(it.get("bold", True)))
+                         bool(it.get("bold", True)) and not path,
+                         path=path)
         stroke = max(0, int(it.get("stroke", 0)))
         kwargs = dict(font=font,
                       fill=str(it.get("color", "#000000")),

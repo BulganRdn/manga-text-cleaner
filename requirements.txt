@@ -8,6 +8,7 @@ tqdm>=4.65
 fastapi>=0.110
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9
+fonttools>=4.40   # font picker: family names + Cyrillic coverage detection
 
 # --- Optional: desktop app (native window + folder pickers) ---
 # pywebview>=5.0

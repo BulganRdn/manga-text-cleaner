@@ -605,6 +605,7 @@ class MaskEditor {
   _textLines(t) { return String(t.text || "").split("\n"); }
 
   _textFont(t) {
+    if (t.fontFamily) return `${t.size}px "${t.fontFamily}"`;
     const fam = { arial: "Arial", comic: '"Comic Sans MS"', verdana: "Verdana",
                   times: '"Times New Roman"', impact: "Impact", tahoma: "Tahoma" }[t.font] || "Arial";
     return `${t.bold ? "bold " : ""}${t.size}px ${fam}`;

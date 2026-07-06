@@ -239,6 +239,7 @@ async function selectPage(index) {
       p.hasResult ? `/api/pages/${index}/result?v=${v}` : null,
       p.hasMask ? `/api/pages/${index}/mask?v=${v}` : null,
       texts);
+    ensureItemFonts(texts).then(() => editor.render());
   } catch (e) {
     toast(t("err_generic", { msg: e.message }), "error");
   }
@@ -512,8 +513,119 @@ async function doExport() {
   } catch (e) { errToast(e); }
 }
 
+const fontState = { list: null, faces: new Map() };
+const LEGACY_FONT_NAMES = { arial: "Arial", comic: "Comic Sans", verdana: "Verdana",
+                            tahoma: "Tahoma", impact: "Impact", times: "Times" };
+
+async function loadFontList(refresh = false) {
+  if (!refresh && fontState.list) return fontState.list;
+  const res = refresh ? await api("/fonts/refresh", { method: "POST" })
+                      : await api("/fonts");
+  fontState.list = res.fonts;
+  return fontState.list;
+}
+
+function fontCssName(f) {
+  return f.style && f.style !== "Regular" ? `MCF ${f.family} ${f.style}` : `MCF ${f.family}`;
+}
+
+function fontDisplayName(f) {
+  return f.style && f.style !== "Regular" ? `${f.family} ${f.style}` : f.family;
+}
+
+function ensureFontFace(cssName, url) {
+  if (fontState.faces.has(cssName)) return fontState.faces.get(cssName);
+  const p = (async () => {
+    const face = new FontFace(cssName, `url("${url}")`);
+    await face.load();
+    document.fonts.add(face);
+  })().catch(() => {});
+  fontState.faces.set(cssName, p);
+  return p;
+}
+
+async function ensureItemFonts(items) {
+  const custom = (items || []).filter((t) => t.fontFamily && t.fontPath);
+  if (!custom.length) return;
+  const list = await loadFontList().catch(() => []);
+  await Promise.all(custom.map((t) => {
+    const f = list.find((f) => f.path === t.fontPath);
+    return f ? ensureFontFace(t.fontFamily, `/api/fonts/${f.id}/file`) : null;
+  }));
+}
+
+let fontObserver = null;
+
+function renderFontRows(filter) {
+  const box = $("#font-list");
+  box.innerHTML = "";
+  if (fontObserver) fontObserver.disconnect();
+  fontObserver = new IntersectionObserver((entries) => {
+    for (const en of entries) {
+      if (!en.isIntersecting) continue;
+      fontObserver.unobserve(en.target);
+      const { css, url } = en.target.dataset;
+      ensureFontFace(css, url).then(() => {
+        en.target.querySelector(".fp-name").style.fontFamily = `"${css}"`;
+      });
+    }
+  }, { root: box });
+  const q = (filter || "").trim().toLowerCase();
+  const list = (fontState.list || []).filter(
+    (f) => !q || fontDisplayName(f).toLowerCase().includes(q));
+  if (!list.length) {
+    box.innerHTML = `<div class="fp-empty">${t("font_none")}</div>`;
+    return;
+  }
+  for (const f of list.slice(0, 400)) {
+    const row = document.createElement("div");
+    row.className = "fp-row";
+    row.dataset.css = fontCssName(f);
+    row.dataset.url = `/api/fonts/${f.id}/file`;
+    const badges =
+      (f.source === "bundled" ? `<span class="fp-badge">fonts/</span>` : "") +
+      (f.supportsCyrillic ? "" : `<span class="fp-badge warn" title="${t("font_no_cyr")}">Аа?</span>`);
+    row.innerHTML = `<span class="fp-name">${fontDisplayName(f)} — Аа Бб</span>${badges}`;
+    row.addEventListener("click", () => applyFont(f));
+    box.appendChild(row);
+    fontObserver.observe(row);
+  }
+}
+
+async function openFontPicker() {
+  const panel = $("#font-picker");
+  panel.hidden = false;
+  $("#font-search").value = "";
+  $("#font-list").innerHTML = `<div class="fp-empty">${t("font_loading")}</div>`;
+  try {
+    await loadFontList();
+    renderFontRows("");
+    $("#font-search").focus();
+  } catch (e) { errToast(e); panel.hidden = true; }
+}
+
+function closeFontPicker() { $("#font-picker").hidden = true; }
+
+function applyFont(f) {
+  const css = fontCssName(f);
+  ensureFontFace(css, `/api/fonts/${f.id}/file`).then(() => editor.render());
+  textDefaults.fontFamily = css;
+  textDefaults.fontPath = f.path;
+  saveTextDefaults();
+  if (editor.selectedText !== null) {
+    ensureTextHistory();
+    const item = editor.texts[editor.selectedText];
+    item.fontFamily = css;
+    item.fontPath = f.path;
+    state.dirty.texts = true;
+    editor.render();
+  }
+  closeFontPicker();
+  syncTextPanel();
+}
+
 function openTextPanel() { $("#text-panel").classList.add("open"); syncTextPanel(); }
-function closeTextPanel() { $("#text-panel").classList.remove("open"); }
+function closeTextPanel() { $("#text-panel").classList.remove("open"); closeFontPicker(); }
 
 function onTextSelect(index) {
   resetTextEditHistory();
@@ -529,8 +641,11 @@ function syncTextPanel() {
   $("#text-color").value = src.color;
   $("#text-stroke").value = src.stroke;
   $("#text-stroke-color").value = src.strokeColor;
-  $("#text-font").value = src.font;
+  $("#font-current").textContent = src.fontFamily
+    ? src.fontFamily.replace(/^MCF /, "")
+    : (LEGACY_FONT_NAMES[src.font] || "Arial");
   $("#text-bold").checked = !!src.bold;
+  $("#text-bold").disabled = !!src.fontPath;
   $("#text-rotation").value = Math.round(src.rotation || 0);
 }
 
@@ -722,8 +837,21 @@ function bindUI() {
   $("#text-color").addEventListener("input", (e) => applyTextPanel("color", e.target.value));
   $("#text-stroke").addEventListener("change", (e) => applyTextPanel("stroke", Math.max(0, +e.target.value || 0)));
   $("#text-stroke-color").addEventListener("input", (e) => applyTextPanel("strokeColor", e.target.value));
-  $("#text-font").addEventListener("change", (e) => applyTextPanel("font", e.target.value));
   $("#text-bold").addEventListener("change", (e) => applyTextPanel("bold", e.target.checked));
+  $("#font-picker-btn").addEventListener("click", () => {
+    $("#font-picker").hidden ? openFontPicker() : closeFontPicker();
+  });
+  $("#font-search").addEventListener("input", (e) => renderFontRows(e.target.value));
+  $("#font-search").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { closeFontPicker(); e.stopPropagation(); }
+  });
+  $("#font-refresh").addEventListener("click", async () => {
+    $("#font-list").innerHTML = `<div class="fp-empty">${t("font_loading")}</div>`;
+    try {
+      await loadFontList(true);
+      renderFontRows($("#font-search").value);
+    } catch (e) { errToast(e); }
+  });
   $("#text-rotation").addEventListener("change", (e) => {
     if (editor.selectedText === null) return;
     ensureTextHistory();

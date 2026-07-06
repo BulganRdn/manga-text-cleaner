@@ -189,6 +189,36 @@ def run_tests(chapter: Path) -> None:
     assert len(ys) and ys.ptp() > xs.ptp(), "rotated text should render vertically"
     print("rotated typeset burn-in: OK")
 
+    r = client.get("/api/fonts")
+    assert r.status_code == 200, r.text
+    fonts = r.json()["fonts"]
+    assert fonts and all("family" in f and "path" in f and "supportsCyrillic" in f
+                         for f in fonts), fonts[:2]
+    fid = fonts[0]["id"]
+    r = client.get(f"/api/fonts/{fid}/file")
+    assert r.status_code == 200 and len(r.content) > 1000
+    assert client.get("/api/fonts/999999/file").status_code == 404
+    print(f"font list + file serving: OK ({len(fonts)} fonts)")
+
+    bundled = Path(__file__).resolve().parents[1] / "fonts" / "_apitest_font.ttf"
+    ttf = next(f for f in fonts if f["path"].lower().endswith(".ttf")
+               and f["supportsCyrillic"])
+    shutil.copy2(ttf["path"], bundled)
+    try:
+        fonts2 = client.post("/api/fonts/refresh").json()["fonts"]
+        mine = [f for f in fonts2 if Path(f["path"]) == bundled.resolve()]
+        assert mine and mine[0]["source"] == "bundled", mine
+        canvas = np.full((200, 400, 3), 255, np.uint8)
+        out = render_texts(canvas, [{"x": 200, "y": 100, "text": "Тест",
+                                     "size": 48, "color": "#000000",
+                                     "fontPath": str(bundled)}])
+        dark = (cv2.cvtColor(out, cv2.COLOR_BGR2GRAY) < 100).sum()
+        assert dark > 50, f"fontPath typeset drew nothing ({dark} px)"
+    finally:
+        bundled.unlink(missing_ok=True)
+        client.post("/api/fonts/refresh")
+    print("bundled fonts/ + fontPath typeset: OK")
+
     r = client.delete(f"/api/projects/{PROJ}")
     assert r.status_code == 200 and r.json()["ok"] is True, r.text
     assert not (PROJECTS_ROOT / PROJ).exists()

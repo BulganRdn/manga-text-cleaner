@@ -26,6 +26,7 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "python-multipart>=0.0.9",
+    "fonttools>=4.40",
 ]
 
 [project.optional-dependencies]
