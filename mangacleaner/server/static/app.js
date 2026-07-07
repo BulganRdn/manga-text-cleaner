@@ -944,9 +944,9 @@ function bindUI() {
 
   window.addEventListener("keydown", (e) => {
     const mod = e.ctrlKey || e.metaKey;
-    if (mod && (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y")) {
+    if (mod && (e.code === "KeyZ" || e.code === "KeyY")) {
       e.preventDefault();
-      if (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey)) redoEdit();
+      if (e.code === "KeyY" || (e.code === "KeyZ" && e.shiftKey)) redoEdit();
       else undoEdit();
       return;
     }
@@ -966,7 +966,9 @@ function bindUI() {
       return;
     }
     if (e.key === "Escape") {
-      if (!editor.cancelMaskPaste() && !editor.cancelPoly()) editor.clearMaskSelection();
+      editor.cancelMaskPaste();
+      editor.cancelPoly();
+      editor.clearMaskSelection();
       return;
     }
     if (e.key === "Backspace" && editor.tool === "poly") {
@@ -975,57 +977,70 @@ function bindUI() {
       return;
     }
     if (e.code === "Space") { editor.setSpacePan(true); e.preventDefault(); return; }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && editor.maskSelection) {
-      e.preventDefault();
-      if (editor.copyMaskSelection()) toast(t("mask_copied"), "info", 2500);
+    if (mod && e.code === "KeyC") {
+      if (editor.tool === "text" && editor.selectedText !== null) {
+        e.preventDefault();
+        if (editor.copySelectedText()) toast(t("text_copied"), "info", 2000);
+        return;
+      }
+      if (editor.maskSelection) {
+        e.preventDefault();
+        if (editor.copyMaskSelection()) toast(t("mask_copied"), "info", 2500);
+        return;
+      }
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
-      if (editor.startMaskPaste()) e.preventDefault();
+    if (mod && e.code === "KeyV") {
+      if (editor.clipKind === "text") {
+        if (editor.pasteText()) e.preventDefault();
+      } else if (editor.startMaskPaste()) {
+        e.preventDefault();
+        toast(t("mask_paste_hint"), "info", 3500);
+      }
       return;
     }
     if (e.ctrlKey || e.metaKey) return;
 
-    if (e.key === "ArrowRight" || e.key === ".") {
+    if (e.key === "ArrowRight" || e.code === "Period") {
       if (!editor.isBusy) { e.preventDefault(); navPage(1); }
       return;
     }
-    if (e.key === "ArrowLeft" || e.key === ",") {
+    if (e.key === "ArrowLeft" || e.code === "Comma") {
       if (!editor.isBusy) { e.preventDefault(); navPage(-1); }
       return;
     }
     if (e.key === "Delete" && editor.maskSelection) { editor.eraseMaskSelection(); return; }
     if (e.key === "Delete" && editor.tool === "text") { editor.deleteSelectedText(); return; }
-    if (e.shiftKey && e.key.toLowerCase() === "r") { revertPage(); return; }
+    if (e.shiftKey && e.code === "KeyR") { revertPage(); return; }
 
-    const k = e.key.toLowerCase();
-    if (k === "b") setTool("brush");
-    else if (k === "e") setTool("eraser");
-    else if (k === "r") setTool("rect");
-    else if (k === "l") setTool("poly");
-    else if (k === "h") setTool("pan");
-    else if (k === "p") setTool("draw");
-    else if (k === "o") setTool("restore");
-    else if (k === "j") setTool("heal");
-    else if (k === "t") setTool("text");
-    else if (k === "d") detectPage();
-    else if (k === "enter") {
+    const k = e.code;
+    if (k === "KeyB") setTool("brush");
+    else if (k === "KeyE") setTool("eraser");
+    else if (k === "KeyR") setTool("rect");
+    else if (k === "KeyL") setTool("poly");
+    else if (k === "KeyH") setTool("pan");
+    else if (k === "KeyP") setTool("draw");
+    else if (k === "KeyO") setTool("restore");
+    else if (k === "KeyJ") setTool("heal");
+    else if (k === "KeyT") setTool("text");
+    else if (k === "KeyD") detectPage();
+    else if (e.key === "Enter") {
       if (editor.tool === "poly" && editor.polyCount >= 3) editor.closePoly();
       else cleanPage();
     }
-    else if (k === "m") $("#btn-mask-vis").click();
-    else if (k === "c") { editor.showOriginal = true; $("#compare-flag").classList.add("on"); editor.render(); }
-    else if (k === "[") adjustBrushSize(-4);
-    else if (k === "]") adjustBrushSize(4);
-    else if (k === "+" || k === "=") editor.zoomBy(1.25);
-    else if (k === "-") editor.zoomBy(1 / 1.25);
-    else if (k === "0") editor.fit();
-    else if (k === "1") editor.zoom100();
+    else if (k === "KeyM") $("#btn-mask-vis").click();
+    else if (k === "KeyC") { editor.showOriginal = true; $("#compare-flag").classList.add("on"); editor.render(); }
+    else if (k === "BracketLeft") adjustBrushSize(-4);
+    else if (k === "BracketRight") adjustBrushSize(4);
+    else if (k === "Equal" || k === "NumpadAdd") editor.zoomBy(1.25);
+    else if (k === "Minus" || k === "NumpadSubtract") editor.zoomBy(1 / 1.25);
+    else if (k === "Digit0" || k === "Numpad0") editor.fit();
+    else if (k === "Digit1" || k === "Numpad1") editor.zoom100();
   });
   window.addEventListener("keyup", (e) => {
     if (e.target instanceof Element && e.target.matches("input, select, textarea")) return;
     if (e.code === "Space") editor.setSpacePan(false);
-    if (e.key.toLowerCase() === "c") {
+    if (e.code === "KeyC") {
       editor.showOriginal = false;
       $("#compare-flag").classList.remove("on");
       editor.render();

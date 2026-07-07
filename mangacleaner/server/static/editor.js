@@ -50,6 +50,9 @@ class MaskEditor {
     this.maskSelection = null;
     this._maskClip = null;
     this._maskFloat = false;
+    this._selDrag = null;
+    this._textClip = null;
+    this._clipKind = null;
 
     this._bind();
     this._resize();
@@ -57,6 +60,8 @@ class MaskEditor {
   }
 
   get isBusy() { return this._pointer !== null; }
+
+  get clipKind() { return this._clipKind; }
 
   async setPage(originalUrl, resultUrl, maskUrl, texts = []) {
     this.original = await this._load(originalUrl);
@@ -83,6 +88,7 @@ class MaskEditor {
     if (this.hasResult) this.markMaskCleaned();
     this.maskSelection = null;
     this._maskFloat = false;
+    this._selDrag = null;
     this.texts = Array.isArray(texts) ? texts : [];
     this.selectedText = null;
     this.cloneSource = null;
@@ -216,6 +222,34 @@ class MaskEditor {
     c.getContext("2d").drawImage(this.maskCanvas, s.x, s.y, s.w, s.h,
                                  0, 0, c.width, c.height);
     this._maskClip = { canvas: c, w: c.width, h: c.height };
+    this._clipKind = "mask";
+    return true;
+  }
+
+  copySelectedText() {
+    if (this.selectedText === null) return false;
+    this._textClip = JSON.parse(JSON.stringify(this.texts[this.selectedText]));
+    this._clipKind = "text";
+    return true;
+  }
+
+  pasteText() {
+    if (!this._textClip || !this.original) return false;
+    const item = JSON.parse(JSON.stringify(this._textClip));
+    delete item.region;
+    item.fit = false;
+    const w = this.resultCanvas.width, h = this.resultCanvas.height;
+    let px = item.x + 24, py = item.y + 24;
+    if (this._cursorPos) {
+      const [cx, cy] = this.toImage(this._cursorPos.x, this._cursorPos.y);
+      if (cx >= 0 && cy >= 0 && cx < w && cy < h) { px = cx; py = cy; }
+    }
+    item.x = Math.max(0, Math.min(w - 1, px));
+    item.y = Math.max(0, Math.min(h - 1, py));
+    const region = this.regionAt(item.x, item.y);
+    if (region) item.region = region;
+    if (this.tool !== "text") this.cb.onRequestTool?.("text");
+    this.addText(item);
     return true;
   }
 
@@ -406,14 +440,15 @@ class MaskEditor {
       this.maskCtx.drawImage(this._maskClip.canvas,
                              Math.round(ix - this._maskClip.w / 2),
                              Math.round(iy - this._maskClip.h / 2));
+      this._maskFloat = e.shiftKey;
       this.cb.onDirty?.("mask");
       this.render();
       return;
     }
     if ((e.ctrlKey || e.metaKey) && MASK_TOOLS.has(this.tool)) {
       const [ix, iy] = this.toImage(p.x, p.y);
-      this.maskSelection = this.regionAt(ix, iy);
-      this.render();
+      this._selDrag = { x0: ix, y0: iy, x1: ix, y1: iy };
+      this._pointer = { tool: "select", last: p, moved: false };
       return;
     }
 
@@ -432,6 +467,7 @@ class MaskEditor {
     }
 
     const tool = this._activeTool(e);
+    if (this.maskSelection && MASK_TOOLS.has(tool)) this.maskSelection = null;
 
     if (tool === "draw" && this.drawClone && !this.cloneSource) return;
 
@@ -535,6 +571,14 @@ class MaskEditor {
       this.render();
       return;
     }
+    if (tool === "select") {
+      const [ix, iy] = this.toImage(p.x, p.y);
+      this._selDrag.x1 = ix;
+      this._selDrag.y1 = iy;
+      this._pointer.last = p;
+      this.render();
+      return;
+    }
     if (tool === "text") {
       if (this._textDrag && this.selectedText !== null) {
         if (!this._textDrag.pushed) { this.pushHistory("texts"); this._textDrag.pushed = true; }
@@ -574,6 +618,21 @@ class MaskEditor {
     if (!this._pointer) return;
     const { tool } = this._pointer;
     this.canvas.classList.remove("panning");
+
+    if (tool === "select" && this._selDrag) {
+      const d = this._selDrag;
+      this._selDrag = null;
+      const rw = Math.abs(d.x1 - d.x0), rh = Math.abs(d.y1 - d.y0);
+      if (rw > 6 || rh > 6) {
+        this.maskSelection = this._maskBoxIn(Math.min(d.x0, d.x1),
+                                             Math.min(d.y0, d.y1), rw, rh);
+      } else {
+        this.maskSelection = this.regionAt(d.x0, d.y0);
+      }
+      this._pointer = null;
+      this.render();
+      return;
+    }
 
     if (tool === "rect" && this._rectStart && this._rectEnd) {
       const [x0, y0] = this._rectStart, [x1, y1] = this._rectEnd;
@@ -683,10 +742,8 @@ class MaskEditor {
     this.tool = tool;
     this._polyPoints = [];
     this.canvas.style.cursor = "";
-    if (!MASK_TOOLS.has(tool)) {
-      this.maskSelection = null;
-      this._maskFloat = false;
-    }
+    this._maskFloat = false;
+    if (!MASK_TOOLS.has(tool)) this.maskSelection = null;
     if (tool !== "text") { this.selectedText = null; this.cb.onTextSelect?.(null); }
     this.canvas.classList.toggle("tool-pan", tool === "pan");
     this.canvas.classList.toggle("tool-poly", tool === "poly");
@@ -743,6 +800,27 @@ class MaskEditor {
     const fam = { arial: "Arial", comic: '"Comic Sans MS"', verdana: "Verdana",
                   times: '"Times New Roman"', impact: "Impact", tahoma: "Tahoma" }[t.font] || "Arial";
     return `${t.bold ? "bold " : ""}${size}px ${fam}`;
+  }
+
+  _maskBoxIn(x, y, w, h) {
+    const mc = this.maskCanvas;
+    const rx = Math.max(0, Math.floor(x)), ry = Math.max(0, Math.floor(y));
+    const rw = Math.min(mc.width - rx, Math.ceil(w));
+    const rh = Math.min(mc.height - ry, Math.ceil(h));
+    if (rw < 1 || rh < 1) return null;
+    const data = this.maskCtx.getImageData(rx, ry, rw, rh).data;
+    let minX = rw, minY = rh, maxX = -1, maxY = -1;
+    for (let yy = 0; yy < rh; yy++) {
+      for (let xx = 0; xx < rw; xx++) {
+        if (data[(yy * rw + xx) * 4 + 3] <= 16) continue;
+        if (xx < minX) minX = xx;
+        if (xx > maxX) maxX = xx;
+        if (yy < minY) minY = yy;
+        if (yy > maxY) maxY = yy;
+      }
+    }
+    if (maxX < 0) return null;
+    return { x: rx + minX, y: ry + minY, w: maxX - minX + 1, h: maxY - minY + 1 };
   }
 
   regionAt(ix, iy) {
@@ -1056,6 +1134,15 @@ class MaskEditor {
       ctx.lineWidth = 1.5 / v.scale;
       ctx.setLineDash([5 / v.scale, 4 / v.scale]);
       ctx.strokeRect(s.x, s.y, s.w, s.h);
+      ctx.setLineDash([]);
+    }
+    if (this._selDrag) {
+      const d = this._selDrag;
+      ctx.strokeStyle = "#ffb340";
+      ctx.lineWidth = 1.5 / v.scale;
+      ctx.setLineDash([5 / v.scale, 4 / v.scale]);
+      ctx.strokeRect(Math.min(d.x0, d.x1), Math.min(d.y0, d.y1),
+                     Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
       ctx.setLineDash([]);
     }
     if (this._maskFloat && this._maskClip && this._cursorPos) {
