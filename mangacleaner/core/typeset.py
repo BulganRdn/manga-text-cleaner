@@ -110,8 +110,10 @@ def _text_layer(measure: ImageDraw.ImageDraw, text: str, size: int,
     bbox = measure.multiline_textbbox((0, 0), text, font=font,
                                       stroke_width=stroke, anchor="mm",
                                       align="center", spacing=spacing)
-    lw = int(bbox[2] - bbox[0]) + 2 * stroke + 8
-    lh = int(bbox[3] - bbox[1]) + 2 * stroke + 8
+    hw = max(abs(bbox[0]), abs(bbox[2])) + stroke + 4
+    hh = max(abs(bbox[1]), abs(bbox[3])) + stroke + 4
+    lw = int(math.ceil(hw)) * 2
+    lh = int(math.ceil(hh)) * 2
     layer = Image.new("RGBA", (lw, lh), (0, 0, 0, 0))
     ImageDraw.Draw(layer).multiline_text((lw / 2, lh / 2), text, **kwargs)
     if not gradient:

@@ -256,6 +256,20 @@ def run_tests(chapter: Path) -> None:
     assert top + 25 < bot, f"gradient not vertical (top {top:.0f} vs bottom {bot:.0f})"
     print("gradient fill export: OK")
 
+    from PIL import Image as PILImage, ImageDraw as PILDraw
+    from mangacleaner.core.typeset import _get_font, _text_layer
+    measure = PILDraw.Draw(PILImage.new("RGB", (8, 8)))
+    for txt in ("gyp", "TACC", "C", "TACC\ngyp"):
+        layer = _text_layer(measure, txt, 80, False, "#ffffff",
+                            font=_get_font("arial", 80, True), fill="#000000",
+                            stroke_width=4, stroke_fill="#ffffff",
+                            anchor="mm", align="center", spacing=20)
+        a = np.array(layer)[:, :, 3]
+        assert not (a[0].any() or a[-1].any()
+                    or a[:, 0].any() or a[:, -1].any()), \
+            f"text layer clips glyph ink for {txt!r}"
+    print("text layer covers ascenders/descenders: OK")
+
     r = client.get("/api/fonts")
     assert r.status_code == 200, r.text
     fonts = r.json()["fonts"]
