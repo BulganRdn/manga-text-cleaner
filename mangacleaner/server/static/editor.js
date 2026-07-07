@@ -22,6 +22,7 @@ class MaskEditor {
 
     this.texts = [];
     this.selectedText = null;
+    this.selectedTexts = new Set();
 
     this.view = { scale: 1, tx: 0, ty: 0 };
     this.tool = "brush";
@@ -91,6 +92,7 @@ class MaskEditor {
     this._selDrag = null;
     this.texts = Array.isArray(texts) ? texts : [];
     this.selectedText = null;
+    this.selectedTexts = new Set();
     this.cloneSource = null;
     this._cloneStrokeOffset = null;
     this._cloneSnap = null;
@@ -114,6 +116,7 @@ class MaskEditor {
     this.hasResult = false;
     this.texts = [];
     this.selectedText = null;
+    this.selectedTexts = new Set();
     this._polyPoints = [];
     this.render();
   }
@@ -226,30 +229,73 @@ class MaskEditor {
     return true;
   }
 
+  _selectedTextIndices() {
+    const s = new Set(this.selectedTexts);
+    if (this.selectedText !== null) s.add(this.selectedText);
+    return [...s].filter((i) => i >= 0 && i < this.texts.length).sort((a, b) => a - b);
+  }
+
   copySelectedText() {
-    if (this.selectedText === null) return false;
-    this._textClip = JSON.parse(JSON.stringify(this.texts[this.selectedText]));
+    const idxs = this._selectedTextIndices();
+    if (!idxs.length) return 0;
+    this._textClip = idxs.map((i) => JSON.parse(JSON.stringify(this.texts[i])));
     this._clipKind = "text";
-    return true;
+    return idxs.length;
   }
 
   pasteText() {
-    if (!this._textClip || !this.original) return false;
-    const item = JSON.parse(JSON.stringify(this._textClip));
-    delete item.region;
-    item.fit = false;
+    if (!this._textClip || !this._textClip.length || !this.original) return false;
+    const items = JSON.parse(JSON.stringify(this._textClip));
     const w = this.resultCanvas.width, h = this.resultCanvas.height;
-    let px = item.x + 24, py = item.y + 24;
+    let gx = 0, gy = 0;
+    for (const it of items) {
+      gx += it.x;
+      gy += it.y;
+      delete it.region;
+      it.fit = false;
+    }
+    gx /= items.length;
+    gy /= items.length;
+    let ox = 24, oy = 24;
     if (this._cursorPos) {
       const [cx, cy] = this.toImage(this._cursorPos.x, this._cursorPos.y);
-      if (cx >= 0 && cy >= 0 && cx < w && cy < h) { px = cx; py = cy; }
+      if (cx >= 0 && cy >= 0 && cx < w && cy < h) { ox = cx - gx; oy = cy - gy; }
     }
-    item.x = Math.max(0, Math.min(w - 1, px));
-    item.y = Math.max(0, Math.min(h - 1, py));
-    const region = this.regionAt(item.x, item.y);
-    if (region) item.region = region;
+    for (const it of items) {
+      it.x = Math.max(0, Math.min(w - 1, it.x + ox));
+      it.y = Math.max(0, Math.min(h - 1, it.y + oy));
+    }
+    if (items.length === 1) {
+      const region = this.regionAt(items[0].x, items[0].y);
+      if (region) items[0].region = region;
+    }
     if (this.tool !== "text") this.cb.onRequestTool?.("text");
-    this.addText(item);
+    this.pushHistory("texts");
+    const start = this.texts.length;
+    this.texts.push(...items);
+    this.selectedTexts = new Set(items.map((_, k) => start + k));
+    this.selectedText = start;
+    this.cb.onDirty?.("texts");
+    this.cb.onTextSelect?.(this.selectedText);
+    this.render();
+    return true;
+  }
+
+  selectAllTexts() {
+    if (this.tool !== "text" || !this.texts.length) return false;
+    this.selectedTexts = new Set(this.texts.map((_, i) => i));
+    this.selectedText = 0;
+    this.cb.onTextSelect?.(0);
+    this.render();
+    return true;
+  }
+
+  clearTextSelection() {
+    if (this.selectedText === null && !this.selectedTexts.size) return false;
+    this.selectedText = null;
+    this.selectedTexts = new Set();
+    this.cb.onTextSelect?.(null);
+    this.render();
     return true;
   }
 
@@ -302,6 +348,7 @@ class MaskEditor {
     if (entry.kind === "texts") {
       this.texts = JSON.parse(entry.data);
       this.selectedText = null;
+      this.selectedTexts = new Set();
       this.cb.onTextSelect?.(null);
       this.cb.onDirty?.("texts");
     } else {
@@ -512,13 +559,26 @@ class MaskEditor {
       }
       const hit = this._hitText(ix, iy);
       if (hit !== null) {
-        this.selectedText = hit;
-        const t = this.texts[hit];
-        this._textDrag = { mode: "move", dx: ix - t.x, dy: iy - t.y, pushed: false };
-        this.cb.onTextSelect?.(hit);
+        if (e.shiftKey) {
+          if (this.selectedTexts.has(hit) && this.selectedTexts.size > 1) {
+            this.selectedTexts.delete(hit);
+            if (this.selectedText === hit) this.selectedText = [...this.selectedTexts][0];
+          } else {
+            this.selectedTexts.add(hit);
+            this.selectedText = hit;
+          }
+          this.cb.onTextSelect?.(this.selectedText);
+        } else {
+          if (!this.selectedTexts.has(hit)) this.selectedTexts = new Set([hit]);
+          this.selectedText = hit;
+          const t = this.texts[hit];
+          this._textDrag = { mode: "move", dx: ix - t.x, dy: iy - t.y, pushed: false };
+          this.cb.onTextSelect?.(hit);
+        }
       } else {
-        this.selectedText = null;
-        this.cb.onTextSelect?.(null);
+        this._selDrag = { x0: ix, y0: iy, x1: ix, y1: iy, add: e.shiftKey };
+        this._pointer = { tool: "textsel", last: p, moved: false };
+        return;
       }
       this.render();
       return;
@@ -571,7 +631,7 @@ class MaskEditor {
       this.render();
       return;
     }
-    if (tool === "select") {
+    if (tool === "select" || tool === "textsel") {
       const [ix, iy] = this.toImage(p.x, p.y);
       this._selDrag.x1 = ix;
       this._selDrag.y1 = iy;
@@ -600,8 +660,15 @@ class MaskEditor {
           else t.scaleY = clamp(Math.abs(ly) / d.hh0);
           t.fit = false;
         } else {
-          t.x = ix - d.dx;
-          t.y = iy - d.dy;
+          const nx = ix - d.dx, ny = iy - d.dy;
+          const ddx = nx - t.x, ddy = ny - t.y;
+          t.x = nx;
+          t.y = ny;
+          for (const si of this.selectedTexts) {
+            if (si === this.selectedText || !this.texts[si]) continue;
+            this.texts[si].x += ddx;
+            this.texts[si].y += ddy;
+          }
         }
         this.cb.onDirty?.("texts");
         this.cb.onTextChange?.();
@@ -618,6 +685,29 @@ class MaskEditor {
     if (!this._pointer) return;
     const { tool } = this._pointer;
     this.canvas.classList.remove("panning");
+
+    if (tool === "textsel" && this._selDrag) {
+      const d = this._selDrag;
+      this._selDrag = null;
+      const x0 = Math.min(d.x0, d.x1), x1 = Math.max(d.x0, d.x1);
+      const y0 = Math.min(d.y0, d.y1), y1 = Math.max(d.y0, d.y1);
+      if (x1 - x0 > 6 || y1 - y0 > 6) {
+        const picked = d.add ? new Set(this.selectedTexts) : new Set();
+        this.texts.forEach((t, i) => {
+          if (t.x >= x0 && t.x <= x1 && t.y >= y0 && t.y <= y1) picked.add(i);
+        });
+        this.selectedTexts = picked;
+        if (!picked.size) this.selectedText = null;
+        else if (!picked.has(this.selectedText)) this.selectedText = [...picked][0];
+      } else if (!d.add) {
+        this.selectedTexts = new Set();
+        this.selectedText = null;
+      }
+      this.cb.onTextSelect?.(this.selectedText);
+      this._pointer = null;
+      this.render();
+      return;
+    }
 
     if (tool === "select" && this._selDrag) {
       const d = this._selDrag;
@@ -744,7 +834,11 @@ class MaskEditor {
     this.canvas.style.cursor = "";
     this._maskFloat = false;
     if (!MASK_TOOLS.has(tool)) this.maskSelection = null;
-    if (tool !== "text") { this.selectedText = null; this.cb.onTextSelect?.(null); }
+    if (tool !== "text") {
+      this.selectedText = null;
+      this.selectedTexts = new Set();
+      this.cb.onTextSelect?.(null);
+    }
     this.canvas.classList.toggle("tool-pan", tool === "pan");
     this.canvas.classList.toggle("tool-poly", tool === "poly");
     this.render();
@@ -985,16 +1079,19 @@ class MaskEditor {
     this.pushHistory("texts");
     this.texts.push(item);
     this.selectedText = this.texts.length - 1;
+    this.selectedTexts = new Set([this.selectedText]);
     this.cb.onDirty?.("texts");
     this.cb.onTextSelect?.(this.selectedText);
     this.render();
   }
 
   deleteSelectedText() {
-    if (this.selectedText === null) return;
+    const idxs = this._selectedTextIndices();
+    if (!idxs.length) return;
     this.pushHistory("texts");
-    this.texts.splice(this.selectedText, 1);
+    for (let k = idxs.length - 1; k >= 0; k--) this.texts.splice(idxs[k], 1);
     this.selectedText = null;
+    this.selectedTexts = new Set();
     this.cb.onDirty?.("texts");
     this.cb.onTextSelect?.(null);
     this.render();
@@ -1057,6 +1154,14 @@ class MaskEditor {
           }
           ctx.fillStyle = fill;
           ctx.fillText(lines[li], 0, y0 + li * lh);
+        }
+        if (this.tool === "text" && i !== this.selectedText && this.selectedTexts.has(i)) {
+          const g = this._handleLayout(t);
+          ctx.strokeStyle = "#5b8cff";
+          ctx.lineWidth = 1.5 / v.scale;
+          ctx.setLineDash([5 / v.scale, 4 / v.scale]);
+          ctx.strokeRect(-g.hw, -g.hh, g.hw * 2, g.hh * 2);
+          ctx.setLineDash([]);
         }
         if (i === this.selectedText && this.tool === "text") {
           const g = this._handleLayout(t);
@@ -1138,7 +1243,7 @@ class MaskEditor {
     }
     if (this._selDrag) {
       const d = this._selDrag;
-      ctx.strokeStyle = "#ffb340";
+      ctx.strokeStyle = this.tool === "text" ? "#5b8cff" : "#ffb340";
       ctx.lineWidth = 1.5 / v.scale;
       ctx.setLineDash([5 / v.scale, 4 / v.scale]);
       ctx.strokeRect(Math.min(d.x0, d.x1), Math.min(d.y0, d.y1),

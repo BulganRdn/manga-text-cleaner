@@ -969,6 +969,7 @@ function bindUI() {
       editor.cancelMaskPaste();
       editor.cancelPoly();
       editor.clearMaskSelection();
+      editor.clearTextSelection();
       return;
     }
     if (e.key === "Backspace" && editor.tool === "poly") {
@@ -977,10 +978,15 @@ function bindUI() {
       return;
     }
     if (e.code === "Space") { editor.setSpacePan(true); e.preventDefault(); return; }
+    if (mod && e.code === "KeyA" && editor.tool === "text") {
+      if (editor.selectAllTexts()) e.preventDefault();
+      return;
+    }
     if (mod && e.code === "KeyC") {
       if (editor.tool === "text" && editor.selectedText !== null) {
         e.preventDefault();
-        if (editor.copySelectedText()) toast(t("text_copied"), "info", 2000);
+        const n = editor.copySelectedText();
+        if (n) toast(n > 1 ? t("texts_copied", { n }) : t("text_copied"), "info", 2000);
         return;
       }
       if (editor.maskSelection) {
