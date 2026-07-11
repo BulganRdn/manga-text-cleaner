@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import secrets
 import tempfile
 import threading
 from pathlib import Path
@@ -13,11 +14,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from ..core import load_image
+from ..core import SUPPORTED_EXTS, load_image
 from ..core.fonts import get_font_path, list_fonts
 from ..core.pipeline import detect_mask, get_meta
 from .. import __version__
-from .project import Project, sanitize_name
+from .project import Project, natural_key, sanitize_name
 
 log = logging.getLogger("mangacleaner")
 
@@ -26,6 +27,7 @@ project = Project()
 threading.Thread(target=list_fonts, daemon=True).start()
 
 STATIC_DIR = Path(__file__).parent / "static"
+_compare_scans: dict[str, list[Path]] = {}
 
 
 class CreateProjectBody(BaseModel):
@@ -72,6 +74,26 @@ class StateBody(BaseModel):
 
 class ExportBody(BaseModel):
     outDir: str | None = None
+
+
+class CompareFolderBody(BaseModel):
+    path: str
+
+
+class ComparePathsBody(BaseModel):
+    paths: list[str]
+
+
+def _compare_scan_paths(paths: list[Path]) -> dict:
+    paths = [p for p in paths
+             if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS]
+    paths.sort(key=lambda p: natural_key(p.name))
+    if not paths:
+        raise HTTPException(400, "no_images")
+    token = secrets.token_hex(8)
+    _compare_scans[token] = paths
+    return {"token": token,
+            "files": [{"index": i, "name": p.name} for i, p in enumerate(paths)]}
 
 
 def _page_or_404(index: int):
@@ -196,6 +218,50 @@ def project_cover(name: str):
         return FileResponse(Project.project_cover(name))
     except ValueError as e:
         raise HTTPException(404, str(e))
+
+
+@app.get("/api/projects/{name}/pages")
+def project_pages(name: str):
+    try:
+        return {"pages": Project.project_pages(name)}
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/projects/{name}/pages/{index}/original")
+def project_page_original(name: str, index: int):
+    try:
+        return FileResponse(Project.project_page_source(name, index))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/compare/folder")
+def compare_folder(body: CompareFolderBody):
+    folder = Path(body.path.strip().strip('"'))
+    if not folder.is_dir():
+        raise HTTPException(400, "folder_not_found")
+    paths = [p for p in folder.rglob("*")
+             if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS]
+    return _compare_scan_paths(paths)
+
+
+@app.post("/api/compare/paths")
+def compare_paths(body: ComparePathsBody):
+    paths: list[Path] = []
+    for raw in body.paths:
+        p = Path(raw.strip().strip('"'))
+        if p.is_file():
+            paths.append(p)
+    return _compare_scan_paths(paths)
+
+
+@app.get("/api/compare/{token}/{index}")
+def compare_file(token: str, index: int):
+    paths = _compare_scans.get(token)
+    if not paths or index < 0 or index >= len(paths):
+        raise HTTPException(404, "not_found")
+    return FileResponse(paths[index])
 
 
 @app.post("/api/project/pages/upload")

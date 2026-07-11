@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Manga Cleaner Studio</title>
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=6">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='19' font-size='19'>🧹</text></svg>">
 </head>
 <body>
@@ -102,6 +102,9 @@
     <button class="tool action" id="btn-compare" data-i18n-title="compare" title="Compare">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v18M5 8l-3 4 3 4M19 8l3 4-3 4"/></svg>
     </button>
+    <button class="tool action" id="btn-compare-view" data-i18n-title="compare_view" title="Side-by-side compare">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="16" rx="1"/><rect x="13" y="4" width="8" height="16" rx="1"/></svg>
+    </button>
     <button class="tool action danger" id="btn-revert" data-i18n-title="revert_page" title="Revert">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
     </button>
@@ -121,6 +124,39 @@
   </nav>
 
   <div id="canvas-wrap">
+    <div id="compare-bar" hidden>
+      <span class="cmp-bar-title" data-i18n="compare_title">Compare</span>
+      <span class="cmp-src-label" data-i18n="cmp_reference">Reference (left)</span>
+      <span id="cmp-ref-info" class="cmp-ref-info" data-i18n="cmp_browse_hint">Browse your raw originals folder</span>
+      <select id="cmp-page" class="ctrl" disabled></select>
+      <button class="btn cmp-nav-btn" id="cmp-prev" type="button" hidden data-i18n-title="cmp_prev" title="Previous image">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <span id="cmp-batch-pos" class="cmp-batch-pos" hidden></span>
+      <button class="btn cmp-nav-btn" id="cmp-next" type="button" hidden data-i18n-title="cmp_next" title="Next image">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+      <button class="btn" id="cmp-browse" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5h6l2 2h10v12H3z"/></svg>
+        <span data-i18n="cmp_browse">Browse files…</span>
+      </button>
+      <button class="btn native-browse" id="cmp-browse-folder" type="button" style="display:none">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5h6l2 2h10v12H3z"/></svg>
+        <span data-i18n="cmp_browse_folder">Browse folder…</span>
+      </button>
+      <input type="file" id="cmp-file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple hidden>
+      <div class="spacer"></div>
+      <button class="btn" id="cmp-fit" type="button" data-i18n="cmp_fit">Fit</button>
+      <button class="icon-btn" id="cmp-close" type="button" data-i18n-title="cmp_close" title="Exit compare">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div id="cmp-left" class="cmp-pane" hidden>
+      <img id="cmp-left-img" alt="" draggable="false">
+      <div class="cmp-label" id="cmp-left-label">Original</div>
+      <div class="cmp-missing" id="cmp-left-missing" hidden></div>
+    </div>
+    <div id="cmp-edit">
     <canvas id="editor-canvas"></canvas>
     <div id="canvas-empty">
       <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M4 3h12l4 4v14H4z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>
@@ -204,6 +240,8 @@
         <button class="btn danger" id="text-delete" data-i18n="text_delete">Delete</button>
       </div>
       <div class="tp-hint" data-i18n="text_hint">Double-click the page to add text. Drag to move.</div>
+    </div>
+    <div class="cmp-edit-label" id="cmp-edit-label" data-i18n="cmp_editing">Editing</div>
     </div>
   </div>
 
@@ -356,8 +394,8 @@
 
 <div id="toasts"></div>
 
-<script src="i18n.js?v=4"></script>
+<script src="i18n.js?v=9"></script>
 <script src="editor.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

@@ -187,6 +187,35 @@ class Project:
         imwrite_u(cover, img)
         return cover
 
+    @staticmethod
+    def _read_meta(name: str) -> tuple[Path, dict]:
+        d = PROJECTS_ROOT / sanitize_name(name)
+        meta = d / "project.json"
+        if not meta.is_file():
+            raise ValueError("project_not_found")
+        return d, json.loads(meta.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def project_pages(name: str) -> list[dict]:
+        """Page names of any saved project, without opening it."""
+        _, data = Project._read_meta(name)
+        return [{"index": i, "name": p["name"]}
+                for i, p in enumerate(data.get("pages", []))]
+
+    @staticmethod
+    def project_page_source(name: str, index: int) -> Path:
+        """Original image file of a page in any saved project."""
+        d, data = Project._read_meta(name)
+        pages = data.get("pages", [])
+        if index < 0 or index >= len(pages):
+            raise ValueError("page_not_found")
+        src = Path(pages[index]["src"])
+        if not src.is_file():
+            src = d / "sources" / pages[index]["name"]
+        if not src.is_file():
+            raise ValueError("source_missing")
+        return src
+
     def add_pages(self, paths: list[Path]) -> int:
         """Copy new images into an open project; duplicates (by name) are
         skipped. Page indices shift after the natural re-sort, so every

@@ -39,6 +39,18 @@ class NativeApi:
     def pick_output_folder(self):
         return self._pick()
 
+    def pick_files(self):
+        import webview
+        result = self._window.create_file_dialog(
+            webview.OPEN_DIALOG,
+            allow_multiple=True,
+            file_types=(
+                "Image files (*.jpg;*.jpeg;*.png;*.webp)",
+                "All files (*.*)",
+            ),
+        )
+        return list(result) if result else []
+
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Manga Cleaner Studio (desktop)")

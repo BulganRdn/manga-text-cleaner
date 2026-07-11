@@ -131,7 +131,10 @@ function wheelBrushStep(e) {
 
 function initEditor() {
   editor = new MaskEditor($("#editor-canvas"), {
-    onView: (v) => { $("#sb-zoom").textContent = Math.round(v.scale * 100) + "%"; },
+    onView: (v) => {
+      $("#sb-zoom").textContent = Math.round(v.scale * 100) + "%";
+      if (cmp.active) cmpSyncLeft();
+    },
     onDirty: (kind) => { state.dirty[kind] = true; },
     onHealStroke: healStroke,
     onTextSelect: onTextSelect,
@@ -253,6 +256,7 @@ async function selectPage(index) {
       p.hasMask ? `/api/pages/${index}/mask?v=${v}` : null,
       texts);
     ensureItemFonts(texts).then(() => editor.render());
+    if (cmp.active && cmp.source === "batch") cmpMatchCurrentPage();
   } catch (e) {
     toast(t("err_generic", { msg: e.message }), "error");
   }
@@ -315,6 +319,7 @@ async function refreshProjectList() {
 }
 
 function resetToNoProject() {
+  if (cmp.active) cmpExit();
   state.pages = [];
   state.current = null;
   state.projectName = null;
@@ -533,6 +538,377 @@ async function doExport() {
     toast(msg, "success", 8000);
   } catch (e) { errToast(e); }
 }
+
+/* ---------- side-by-side compare (inline, editable) ---------- */
+
+const cmp = { active: false, leftView: null, source: "none", batch: [], batchIndex: 0 };
+
+const CMP_IMG_RE = /\.(jpe?g|png|webp)$/i;
+
+function cmpSortKey(name) {
+  return name.split(/(\d+)/).map((s) => (s.match(/^\d+$/) ? +s : s.toLowerCase()));
+}
+
+function cmpSortByName(a, b) {
+  const ka = cmpSortKey(a.name), kb = cmpSortKey(b.name);
+  for (let i = 0; i < Math.min(ka.length, kb.length); i++) {
+    if (ka[i] < kb[i]) return -1;
+    if (ka[i] > kb[i]) return 1;
+  }
+  return 0;
+}
+
+function cmpFitScale(w, h, iw, ih) {
+  return Math.min(w / iw, h / ih) * 0.96;
+}
+
+function cmpImageAtCenter(el, view, iw, ih) {
+  const w = el.clientWidth, h = el.clientHeight;
+  const cx = w / 2, cy = h / 2;
+  return { ix: (cx - view.tx) / view.scale, iy: (cy - view.ty) / view.scale, iw, ih };
+}
+
+function cmpSyncLeft() {
+  const left = $("#cmp-left");
+  const edit = $("#cmp-edit");
+  const img = $("#cmp-left-img");
+  if (!cmp.active || !img.naturalWidth || !editor.original) return;
+
+  const lw = left.clientWidth, lh = left.clientHeight;
+  const ew = edit.clientWidth, eh = edit.clientHeight;
+  const liw = img.naturalWidth, lih = img.naturalHeight;
+  const eiw = editor.original.naturalWidth, eih = editor.original.naturalHeight;
+  const ed = editor.view;
+
+  const { ix: eix, iy: eiy } = cmpImageAtCenter(edit, ed, eiw, eih);
+  const nx = eix / eiw, ny = eiy / eih;
+  const lix = nx * liw, liy = ny * lih;
+
+  const zoom = ed.scale / cmpFitScale(ew, eh, eiw, eih);
+  const s = cmpFitScale(lw, lh, liw, lih) * zoom;
+  const x = lw / 2 - lix * s;
+  const y = lh / 2 - liy * s;
+  img.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  cmp.leftView = { s, x, y, liw, lih, eiw, eih };
+}
+
+function cmpLeftToNorm(lx, ly) {
+  const v = cmp.leftView;
+  if (!v) return { nx: 0.5, ny: 0.5 };
+  return { nx: (lx - v.x) / (v.s * v.liw), ny: (ly - v.y) / (v.s * v.lih) };
+}
+
+function cmpPan(dx, dy) {
+  editor.view.tx += dx;
+  editor.view.ty += dy;
+  editor.render();
+}
+
+function cmpZoomAt(side, clientX, clientY, factor) {
+  if (side === "left") {
+    const left = $("#cmp-left");
+    const rect = left.getBoundingClientRect();
+    const lx = clientX - rect.left, ly = clientY - rect.top;
+    const { nx, ny } = cmpLeftToNorm(lx, ly);
+    const v = cmp.leftView;
+    if (!v || !editor.original) return;
+    const eix = nx * v.eiw, eiy = ny * v.eih;
+    const edit = $("#cmp-edit");
+    const er = edit.getBoundingClientRect();
+    const ecx = editor.view.tx + eix * editor.view.scale;
+    const ecy = editor.view.ty + eiy * editor.view.scale;
+    editor.zoomBy(factor, ecx, ecy);
+    return;
+  }
+  const edit = $("#cmp-edit");
+  const rect = edit.getBoundingClientRect();
+  editor.zoomBy(factor, clientX - rect.left, clientY - rect.top);
+}
+
+function cmpClearBatch() {
+  for (const item of cmp.batch) {
+    if (item.url?.startsWith("blob:")) URL.revokeObjectURL(item.url);
+  }
+  cmp.batch = [];
+  cmp.batchIndex = 0;
+  cmp.source = "none";
+  $("#cmp-ref-info").textContent = "";
+  cmpUpdateBatchUI();
+}
+
+function cmpFindBatchIndex(pageName) {
+  const lower = pageName.toLowerCase();
+  let idx = cmp.batch.findIndex((b) => b.name.toLowerCase() === lower);
+  if (idx >= 0) return idx;
+  const stem = lower.replace(/\.[^.]+$/, "");
+  return cmp.batch.findIndex((b) => b.name.replace(/\.[^.]+$/, "").toLowerCase() === stem);
+}
+
+function cmpUpdateBatchUI() {
+  const on = cmp.source === "batch" && cmp.batch.length > 0;
+  $("#cmp-prev").hidden = !on;
+  $("#cmp-next").hidden = !on;
+  $("#cmp-batch-pos").hidden = !on;
+  if (on) {
+    $("#cmp-batch-pos").textContent = t("cmp_batch_pos",
+      { n: cmp.batchIndex + 1, total: cmp.batch.length });
+    $("#cmp-prev").disabled = cmp.batchIndex <= 0;
+    $("#cmp-next").disabled = cmp.batchIndex >= cmp.batch.length - 1;
+  }
+}
+
+function cmpFillPageDropdown(items, selectedIndex) {
+  const sel = $("#cmp-page");
+  sel.innerHTML = "";
+  items.forEach((item, i) => {
+    const opt = document.createElement("option");
+    opt.value = String(i);
+    opt.textContent = `${i + 1} · ${item.name}`;
+    sel.appendChild(opt);
+  });
+  sel.disabled = !items.length;
+  if (items.length) {
+    sel.value = String(Math.min(selectedIndex, items.length - 1));
+  }
+}
+
+function cmpSetBatchLabel(label) {
+  $("#cmp-ref-info").textContent = label;
+}
+
+function cmpActivateBatch(batch, label, startIndex) {
+  if (!batch.length) {
+    toast(t("err_no_images"), "warn");
+    return;
+  }
+  cmpClearBatch();
+  cmp.batch = batch;
+  cmp.source = "batch";
+  cmpSetBatchLabel(label);
+  cmpFillPageDropdown(batch, startIndex ?? 0);
+  cmpShowBatchIndex(startIndex ?? 0);
+  cmpUpdateBatchUI();
+  toast(t("cmp_batch_loaded", { n: batch.length }), "success");
+}
+
+function cmpApplyCompareResponse(res, label) {
+  const batch = res.files.map((f) => ({
+    name: f.name,
+    url: `/api/compare/${res.token}/${f.index}`,
+  }));
+  let start = 0;
+  if (state.current !== null && state.pages[state.current]) {
+    const hit = cmpFindBatchIndex(state.pages[state.current].name);
+    if (hit >= 0) start = hit;
+  }
+  cmpActivateBatch(batch, label, start);
+  editor.fit();
+}
+
+function cmpShowBatchIndex(i) {
+  if (!cmp.batch.length) return;
+  cmp.batchIndex = Math.max(0, Math.min(i, cmp.batch.length - 1));
+  const item = cmp.batch[cmp.batchIndex];
+  $("#cmp-page").value = String(cmp.batchIndex);
+  $("#cmp-left-label").textContent = `${t("cmp_original")} — ${item.name}`;
+  cmpSetLeftImage(item.url);
+  cmpUpdateBatchUI();
+}
+
+function cmpMatchCurrentPage() {
+  if (cmp.source !== "batch" || state.current === null) return;
+  const pageName = state.pages[state.current]?.name;
+  if (!pageName) return;
+  const idx = cmpFindBatchIndex(pageName);
+  if (idx >= 0) {
+    cmpShowBatchIndex(idx);
+    editor.fit();
+  } else {
+    toast(t("cmp_no_match", { name: pageName }), "warn", 3500);
+  }
+}
+
+function cmpNavBatch(delta) {
+  if (cmp.source !== "batch" || !cmp.batch.length) return;
+  cmpShowBatchIndex(cmp.batchIndex + delta);
+  editor.fit();
+}
+
+async function cmpLoadFolder(path) {
+  try {
+    const res = await api("/compare/folder", {
+      method: "POST", body: JSON.stringify({ path }),
+    });
+    const folderName = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
+    cmpApplyCompareResponse(res, `📁 ${folderName} (${res.files.length})`);
+  } catch (e) { errToast(e); }
+}
+
+async function cmpLoadPaths(paths) {
+  try {
+    const res = await api("/compare/paths", {
+      method: "POST", body: JSON.stringify({ paths }),
+    });
+    const label = paths.length === 1
+      ? `📄 ${paths[0].replace(/[\\/]+$/, "").split(/[\\/]/).pop()}`
+      : `📄 ${res.files.length} ${t("cmp_files")}`;
+    cmpApplyCompareResponse(res, label);
+  } catch (e) { errToast(e); }
+}
+
+function cmpLoadFiles(fileList) {
+  const files = [...fileList].filter((f) => CMP_IMG_RE.test(f.name));
+  files.sort((a, b) => cmpSortByName({ name: a.name }, { name: b.name }));
+  if (!files.length) { toast(t("err_no_images"), "warn"); return; }
+  const batch = files.map((f) => ({ name: f.name, url: URL.createObjectURL(f) }));
+  let start = 0;
+  if (state.current !== null && state.pages[state.current]) {
+    const hit = cmpFindBatchIndex(state.pages[state.current].name);
+    if (hit >= 0) start = hit;
+  }
+  const label = files.length === 1
+    ? `📄 ${files[0].name}`
+    : `📄 ${files.length} ${t("cmp_files")}`;
+  cmpActivateBatch(batch, label, start);
+  editor.fit();
+}
+
+function cmpSetLeftImage(url) {
+  const img = $("#cmp-left-img");
+  const missing = $("#cmp-left-missing");
+  img.onload = null;
+  img.onerror = null;
+  img.removeAttribute("src");
+  img.style.visibility = "hidden";
+  if (!url) {
+    missing.textContent = t("cmp_browse_hint");
+    missing.hidden = false;
+    cmp.leftView = null;
+    return;
+  }
+  missing.hidden = true;
+  const src = url.startsWith("/api/") ? `${url}?t=${Date.now()}` : url;
+  img.onload = () => { img.style.visibility = "visible"; cmpSyncLeft(); };
+  img.onerror = () => {
+    img.removeAttribute("src");
+    missing.textContent = t("cmp_load_failed");
+    missing.hidden = false;
+    cmp.leftView = null;
+  };
+  img.src = src;
+}
+
+function cmpShowLeftPlaceholder() {
+  cmp.source = "none";
+  cmpSetBatchLabel(t("cmp_browse_hint"));
+  $("#cmp-left-label").textContent = t("cmp_reference");
+  cmpFillPageDropdown([], 0);
+  cmpSetLeftImage(null);
+}
+
+async function openCompare() {
+  const i = state.current;
+  if (i === null || !state.projectName) return;
+  if (cmp.active) { cmpExit(); return; }
+  await saveCurrentPageState();
+  cmpClearBatch();
+  cmpShowLeftPlaceholder();
+  cmpEnter();
+}
+
+function bindCompare() {
+  $("#btn-compare-view").addEventListener("click", openCompare);
+  $("#cmp-close").addEventListener("click", cmpExit);
+  $("#cmp-fit").addEventListener("click", () => { editor.fit(); });
+  $("#cmp-prev").addEventListener("click", () => cmpNavBatch(-1));
+  $("#cmp-next").addEventListener("click", () => cmpNavBatch(1));
+
+  $("#cmp-page").addEventListener("change", () => {
+    if (cmp.source === "batch") {
+      cmpShowBatchIndex(+$("#cmp-page").value || 0);
+      editor.fit();
+    }
+  });
+
+  $("#cmp-browse").addEventListener("click", async () => {
+    if (window.pywebview?.api?.pick_files) {
+      try {
+        const paths = await window.pywebview.api.pick_files();
+        if (paths?.length) await cmpLoadPaths(paths);
+      } catch (e) { errToast(e); }
+      return;
+    }
+    $("#cmp-file").click();
+  });
+  $("#cmp-file").addEventListener("change", () => {
+    const files = [...$("#cmp-file").files];
+    $("#cmp-file").value = "";
+    if (!files.length) return;
+    cmpLoadFiles(files);
+  });
+  $("#cmp-browse-folder").addEventListener("click", async () => {
+    if (!window.pywebview?.api?.pick_folder) {
+      toast(t("err_folder"), "warn");
+      return;
+    }
+    try {
+      const p = await window.pywebview.api.pick_folder();
+      if (p) await cmpLoadFolder(p);
+    } catch (e) { errToast(e); }
+  });
+
+  const left = $("#cmp-left");
+  left.addEventListener("wheel", (e) => {
+    if (!cmp.active) return;
+    e.preventDefault();
+    cmpZoomAt("left", e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+  }, { passive: false });
+  left.addEventListener("pointerdown", (e) => {
+    if (!cmp.active || e.button !== 0) return;
+    left.setPointerCapture(e.pointerId);
+    left.classList.add("panning");
+    let last = { x: e.clientX, y: e.clientY };
+    const move = (ev) => {
+      cmpPan(ev.clientX - last.x, ev.clientY - last.y);
+      last = { x: ev.clientX, y: ev.clientY };
+    };
+    const up = () => {
+      left.classList.remove("panning");
+      left.releasePointerCapture(e.pointerId);
+      left.removeEventListener("pointermove", move);
+      left.removeEventListener("pointerup", up);
+      left.removeEventListener("pointercancel", up);
+    };
+    left.addEventListener("pointermove", move);
+    left.addEventListener("pointerup", up);
+    left.addEventListener("pointercancel", up);
+  });
+
+  window.addEventListener("resize", () => {
+    if (cmp.active) cmpSyncLeft();
+  });
+}
+
+function cmpEnter() {
+  $("#canvas-wrap").classList.add("compare-active");
+  $("#compare-bar").hidden = false;
+  $("#cmp-left").hidden = false;
+  $("#btn-compare-view").classList.add("active");
+  cmp.active = true;
+  requestAnimationFrame(() => { editor.fit(); cmpSyncLeft(); });
+}
+
+function cmpExit() {
+  $("#canvas-wrap").classList.remove("compare-active");
+  $("#compare-bar").hidden = true;
+  $("#cmp-left").hidden = true;
+  $("#btn-compare-view").classList.remove("active");
+  cmp.active = false;
+  cmpClearBatch();
+  requestAnimationFrame(() => editor.fit());
+}
+
+/* ---------- fonts ---------- */
 
 const fontState = { list: null, faces: new Map() };
 const LEGACY_FONT_NAMES = { arial: "Arial", comic: "Comic Sans", verdana: "Verdana",
@@ -966,6 +1342,7 @@ function bindUI() {
       return;
     }
     if (e.key === "Escape") {
+      if (cmp.active) { cmpExit(); return; }
       editor.cancelMaskPaste();
       editor.cancelPoly();
       editor.clearMaskSelection();
@@ -1070,6 +1447,7 @@ async function boot() {
   applyI18n();
   initEditor();
   bindUI();
+  bindCompare();
   $("#sb-hint").textContent = t("shortcut_hint");
   setTool("brush");
   $("#btn-mask-vis").classList.add("active");
